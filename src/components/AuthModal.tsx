@@ -275,112 +275,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setError(res.error || 'Login failed. Check your username and password.');
         }
       } else {
-        // Direct Supabase Client Registration Query (No fetch)
-        if (isSupabaseConfigured && supabase) {
-          const cleanRef = cleanMobileInput(referralCode).toUpperCase();
-
-          // 1. Direct username duplicate check
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('id, username')
-            .ilike('username', cleanUser)
-            .limit(1);
-
-          if (existingUser && existingUser.length > 0) {
-            setError('Username already registered. Please choose another.');
-            setLoading(false);
-            return;
-          }
-
-          // 2. Direct referral check
-          let referredByAdminId = 'admin_master_002';
-          const { data: adminMatch } = await supabase
-            .from('users')
-            .select('id, referral_code_used')
-            .ilike('referral_code_used', cleanRef)
-            .limit(1);
-
-          if (adminMatch && adminMatch.length > 0) {
-            referredByAdminId = adminMatch[0].id;
-          }
-
-          const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          const now = new Date();
-          const dateFormatted = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-
-          // 3. Direct insert into users table using Supabase client
-          const { error: insertUserErr } = await supabase
-            .from('users')
-            .insert([{
-              id: newUserId,
-              username: cleanUser,
-              display_name: cleanMobileInput(fullName) || cleanUser,
-              password_hash: cleanPass,
-              email: `${cleanUser}@flowcoin.io`,
-              role: 'USER',
-              native_currency: selectedCurrency,
-              credit_score: 95,
-              status: 'Active',
-              trade_mode: 'AUTO',
-              referred_by_admin_id: referredByAdminId,
-              referral_code_used: cleanRef,
-              registered_time: dateFormatted,
-              created_at: now.toISOString()
-            }]);
-
-          if (insertUserErr) {
-            console.warn('Supabase user insert encountered an issue, using local storage:', insertUserErr);
-          } else {
-            // 4. Direct insert into balances table using Supabase client
-            await supabase
-              .from('balances')
-              .insert([{
-                user_id: newUserId,
-                available_usd: 1000.0,
-                frozen_usd: 0.0,
-                native_currency: selectedCurrency,
-                exchange_rate: 1.0
-              }]);
-
-            const newUser: User = {
-              id: newUserId,
-              username: cleanUser,
-              displayName: cleanMobileInput(fullName) || cleanUser,
-              email: `${cleanUser}@flowcoin.io`,
-              nativeCurrency: selectedCurrency,
-              balance: 1000.0,
-              freezeBalance: 0.0,
-              creditScore: 95,
-              status: 'Active',
-              tradeMode: 'AUTO',
-              referredByAdminId,
-              referralCodeUsed: cleanRef,
-              isNew: true,
-              registeredTime: dateFormatted,
-              createdAt: now.toISOString()
-            };
-
-            localDb.addUser(newUser);
-            if (typeof window !== 'undefined') {
-              try {
-                window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
-                localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
-              } catch (e) {
-                console.warn('Failed to dispatch registration event:', e);
-              }
-            }
-            onLoginSuccess(newUser);
-            onClose();
-            return;
-          }
-        }
-
-        // Local storage registration fallback (Zero network fetch)
-        const res = localDb.register({
+        const cleanRef = cleanMobileInput(referralCode || 'ROOT786').toUpperCase();
+        const res = await api.registerUser({
           username: cleanUser,
           fullName: cleanMobileInput(fullName),
           password: cleanPass,
-          referralCode: cleanMobileInput(referralCode).toUpperCase(),
+          referralCode: cleanRef,
           nativeCurrency: selectedCurrency
         });
 

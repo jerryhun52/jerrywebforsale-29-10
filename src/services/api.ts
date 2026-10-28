@@ -234,10 +234,10 @@ export const api = {
     referralCode?: string;
     nativeCurrency?: string;
   }): Promise<{ success: boolean; user?: User; error?: string }> {
-    const cleanUser = data.username.trim();
+    const cleanUser = (data.username || '').trim();
     const cleanPass = (data.password || '123123').trim();
     const cleanFullName = (data.fullName || cleanUser).trim();
-    const cleanRef = (data.referralCode || 'MASTER321').trim().toUpperCase();
+    const cleanRef = (data.referralCode || 'ROOT786').trim().toUpperCase();
     const currency = data.nativeCurrency || 'USD';
 
     if (!cleanUser || cleanUser.length < 3) {
@@ -247,104 +247,73 @@ export const api = {
       return { success: false, error: 'Password must be at least 6 characters.' };
     }
 
-    // 1. Direct Supabase Client Registration
+    // 1. Primary Registration in localDb (Resolves referredByAdminId accurately)
+    const localRes = localDb.register({
+      username: cleanUser,
+      fullName: cleanFullName,
+      password: cleanPass,
+      referralCode: cleanRef,
+      nativeCurrency: currency
+    });
+
+    if (!localRes.success || !localRes.user) {
+      return { success: false, error: localRes.error || 'Username already registered.' };
+    }
+
+    const newUser = localRes.user;
+
+    // 2. Persistent Sync to Supabase
     if (isSupabaseConfigured && supabase) {
       try {
-        // Check duplicate username directly
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id, username')
-          .ilike('username', cleanUser)
-          .limit(1);
+        await supabase.from('users').upsert({
+          id: newUser.id,
+          username: newUser.username,
+          display_name: newUser.displayName,
+          password_hash: cleanPass,
+          email: newUser.email,
+          role: 'USER',
+          native_currency: newUser.nativeCurrency,
+          credit_score: newUser.creditScore,
+          status: newUser.status,
+          trade_mode: newUser.tradeMode,
+          referred_by_admin_id: newUser.referredByAdminId,
+          referral_code_used: newUser.referralCodeUsed,
+          registered_time: newUser.registeredTime,
+          created_at: newUser.createdAt
+        });
 
-        if (existingUser && existingUser.length > 0) {
-          return { success: false, error: 'Username already registered. Please choose another.' };
-        }
-
-        // Validate referral code directly
-        let referredByAdminId = 'admin_master_002';
-        const { data: adminRows } = await supabase
-          .from('users')
-          .select('id, referral_code_used')
-          .ilike('referral_code_used', cleanRef)
-          .limit(1);
-
-        if (adminRows && adminRows.length > 0) {
-          referredByAdminId = adminRows[0].id;
-        }
-
-        const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-        const now = new Date();
-        const dateFormatted = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-
-        // Direct insert into public.users
-        const { error: insertUserError } = await supabase
-          .from('users')
-          .insert([{
-            id: newUserId,
-            username: cleanUser,
-            display_name: cleanFullName,
-            password_hash: cleanPass,
-            email: `${cleanUser}@flowcoin.io`,
-            role: 'USER',
-            native_currency: currency,
-            credit_score: 100,
-            status: 'Active',
-            trade_mode: 'AUTO',
-            referred_by_admin_id: referredByAdminId,
-            referral_code_used: cleanRef,
-            registered_time: dateFormatted,
-            created_at: now.toISOString()
-          }]);
-
-        if (!insertUserError) {
-          // Direct insert into public.balances
-          await supabase
-            .from('balances')
-            .insert([{
-              user_id: newUserId,
-              available_usd: 0.0,
-              frozen_usd: 0.0,
-              native_currency: currency,
-              exchange_rate: 1.0
-            }]);
-
-          const newUser: User = {
-            id: newUserId,
-            username: cleanUser,
-            displayName: cleanFullName,
-            email: `${cleanUser}@flowcoin.io`,
-            nativeCurrency: currency as any,
-            balance: 0.0,
-            freezeBalance: 0.0,
-            creditScore: 100,
-            status: 'Active',
-            tradeMode: 'AUTO',
-            referredByAdminId,
-            referralCodeUsed: cleanRef,
-            isNew: true,
-            registeredTime: dateFormatted,
-            createdAt: now.toISOString()
-          };
-
-          localDb.addUser(newUser);
-          if (typeof window !== 'undefined') {
-            try {
-              window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
-              localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
-            } catch (e) {
-              console.warn('Failed to dispatch registration event:', e);
-            }
-          }
-          return { success: true, user: newUser };
-        }
+        await supabase.from('balances').upsert({
+          user_id: newUser.id,
+          available_usd: 0.0,
+          frozen_usd: 0.0,
+          native_currency: newUser.nativeCurrency,
+          exchange_rate: 1.0
+        });
       } catch (err) {
-        console.warn('Supabase direct insert encountered an issue, using localDb:', err);
+        console.warn('Supabase register sync warning:', err);
       }
     }
 
-    // 2. Reliable Local Storage Registration
-    return localDb.register(data);
+    // 3. Persistent Sync to Firestore
+    if (firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', newUser.id), newUser);
+      } catch (err) {
+        console.warn('Firestore register sync warning:', err);
+      }
+    }
+
+    // 4. Real-time Audio Chime & Storage Event Broadcast
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
+        localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
+      } catch (e) {
+        console.warn('Registration event broadcast warning:', e);
+      }
+    }
+
+    return { success: true, user: newUser };
   },
 
   async getUserProfile(id: string): Promise<{ success: boolean; user?: User; error?: string }> {
@@ -376,9 +345,9 @@ export const api = {
               displayName: row.display_name || row.username,
               email: row.email,
               nativeCurrency: row.native_currency || 'USD',
-              balance: bal ? Number(bal.available_usd) : 1000,
+              balance: bal ? Number(bal.available_usd) : 0,
               freezeBalance: bal ? Number(bal.frozen_usd) : 0,
-              creditScore: row.credit_score || 95,
+              creditScore: row.credit_score || 100,
               status: row.status || 'Active',
               tradeMode: row.trade_mode || 'AUTO',
               referralCodeUsed: row.referral_code_used,
@@ -413,9 +382,76 @@ export const api = {
     return localDb.getAdminProfile(id);
   },
 
-  // Admin User Management
+  // Admin User Management with Multi-Cloud Unified Sync
   async getAdminUsers(adminId: string): Promise<User[]> {
-    return localDb.getUsers(adminId);
+    const userMap = new Map<string, User>();
+
+    // 1. Load from localDb
+    const localUsers = localDb.getUsers(adminId);
+    localUsers.forEach(u => userMap.set(u.id, u));
+
+    // 2. Load from Supabase if connected
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: rows } = await supabase.from('users').select('*').eq('role', 'USER');
+        if (rows && rows.length > 0) {
+          for (const row of rows) {
+            const userObj: User = {
+              id: row.id,
+              username: row.username,
+              displayName: row.display_name || row.username,
+              email: row.email,
+              nativeCurrency: row.native_currency || 'USD',
+              balance: 0.0,
+              freezeBalance: 0.0,
+              creditScore: row.credit_score || 100,
+              status: row.status || 'Active',
+              tradeMode: row.trade_mode || 'AUTO',
+              referredByAdminId: row.referred_by_admin_id,
+              referralCodeUsed: row.referral_code_used,
+              registeredTime: row.registered_time || new Date().toLocaleString(),
+              createdAt: row.created_at
+            };
+            if (!userMap.has(userObj.id)) {
+              localDb.addUser(userObj);
+              userMap.set(userObj.id, userObj);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase fetch users warning:', err);
+      }
+    }
+
+    // 3. Load from Firestore if connected
+    if (firestoreDb) {
+      try {
+        const snap = await getDocs(collection(firestoreDb, 'users'));
+        snap.forEach(docSnap => {
+          const u = docSnap.data() as User;
+          if (u && u.id) {
+            if (!userMap.has(u.id)) {
+              localDb.addUser(u);
+              userMap.set(u.id, u);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Firestore fetch users warning:', err);
+      }
+    }
+
+    const merged = Array.from(userMap.values());
+    const adminRes = localDb.getAdminProfile(adminId);
+    const admin = adminRes.admin;
+
+    if (admin && admin.role === 'SUB_ADMIN') {
+      return merged.filter(
+        u => u.referredByAdminId === admin.id || (admin.referralCode && u.referralCodeUsed === admin.referralCode)
+      );
+    }
+
+    return merged;
   },
 
   async updateUserBalance(userId: string, action: 'add' | 'deduct' | 'set', amountUsd: number): Promise<any> {

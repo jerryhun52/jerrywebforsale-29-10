@@ -503,8 +503,28 @@ export const localDb = {
   getUsers(adminId?: string): User[] {
     const db = getDb();
     const admin = db.adminAccounts.find(a => a.id === adminId);
+
+    // Auto-fix any mismatched referredByAdminId based on referralCodeUsed
+    let modified = false;
+    db.users.forEach(u => {
+      if (u.referralCodeUsed) {
+        const matched = db.adminAccounts.find(
+          a => cleanMobileInput(a.referralCode).toUpperCase() === cleanMobileInput(u.referralCodeUsed!).toUpperCase()
+        );
+        if (matched && u.referredByAdminId !== matched.id) {
+          u.referredByAdminId = matched.id;
+          modified = true;
+        }
+      }
+    });
+    if (modified) {
+      saveDb(db);
+    }
+
     if (admin && admin.role === 'SUB_ADMIN') {
-      return db.users.filter(u => u.referredByAdminId === admin.id);
+      return db.users.filter(
+        u => u.referredByAdminId === admin.id || (admin.referralCode && u.referralCodeUsed === admin.referralCode)
+      );
     }
     return db.users;
   },
