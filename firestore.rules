@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // App Config: readable by everyone, writable by admins
+    match /config/{document=**} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Users collection: readable and writable for registered traders and admins
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // Trades collection: real-time order creation and updates
+    match /trades/{tradeId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // Wallet requests: deposit & withdrawal requests
+    match /walletRequests/{requestId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // Catch-all
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

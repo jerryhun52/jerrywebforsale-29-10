@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Trader client profile and balances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ADMIN", "SUB_ADMIN"] },
+        "nativeCurrency": { "type": "string" },
+        "balance": { "type": "number" },
+        "freezeBalance": { "type": "number" },
+        "creditScore": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active", "Suspended", "Frozen"] },
+        "tradeMode": { "type": "string", "enum": ["AUTO", "FORCE_WIN", "FORCE_LOSS"] },
+        "referredByAdminId": { "type": "string" },
+        "referralCodeUsed": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "balance"]
+    },
+    "trades": {
+      "title": "Trade",
+      "description": "Binary/option trading contracts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "symbol": { "type": "string" },
+        "direction": { "type": "string", "enum": ["UP", "DOWN"] },
+        "durationSeconds": { "type": "number" },
+        "profitPercent": { "type": "number" },
+        "marginUsd": { "type": "number" },
+        "entryPrice": { "type": "number" },
+        "currentPrice": { "type": "number" },
+        "exitPrice": { "type": "number" },
+        "outcome": { "type": "string", "enum": ["PENDING", "WIN", "LOSS"] },
+        "status": { "type": "string", "enum": ["RUNNING", "SETTLED"] },
+        "payoutUsd": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "symbol", "direction", "marginUsd"]
+    },
+    "walletRequests": {
+      "title": "WalletRequest",
+      "description": "Deposit and withdrawal requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "type": { "type": "string", "enum": ["DEPOSIT", "WITHDRAWAL"] },
+        "amountUsd": { "type": "number" },
+        "amountNative": { "type": "number" },
+        "currency": { "type": "string" },
+        "network": { "type": "string" },
+        "addressOrAccount": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "remarks": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "type", "amountUsd", "network", "status"]
+    },
+    "appConfig": {
+      "title": "AppConfig",
+      "description": "System configuration and announcements",
+      "type": "object",
+      "properties": {
+        "telegramSupportUsername": { "type": "string" },
+        "telegramLink": { "type": "string" },
+        "minDepositUsd": { "type": "number" },
+        "minWithdrawalUsd": { "type": "number" },
+        "platformNotice": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "Trader client user profiles"
+    },
+    "/trades/{tradeId}": {
+      "schema": { "$ref": "#/entities/trades" },
+      "description": "Real-time trading orders"
+    },
+    "/walletRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/walletRequests" },
+      "description": "Financial deposit and withdrawal requests"
+    },
+    "/config/global": {
+      "schema": { "$ref": "#/entities/appConfig" },
+      "description": "Global application configuration"
+    }
+  }
+}

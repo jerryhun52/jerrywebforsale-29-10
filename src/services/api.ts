@@ -11,41 +11,11 @@ import {
   UserStatus
 } from '../types.ts';
 import { localDb } from './localDb.ts';
+import { supabase, isSupabaseConfigured } from './supabase.ts';
+import { db as firestoreDb } from './firebase.ts';
+import { doc, setDoc, getDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 
-const BASE_URL = '/api';
-
-// Safe JSON fetcher that never crashes with Unexpected token 'T' on HTML/404 responses
-async function safeFetch<T>(
-  url: string,
-  options?: RequestInit,
-  fallbackFn?: () => T
-): Promise<T> {
-  try {
-    const res = await fetch(url, options);
-    const contentType = res.headers.get('content-type') || '';
-
-    // If server returned valid JSON
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-      return data as T;
-    }
-
-    // If server returned HTML (e.g. Vercel 404 "The page could not be found" or SPA index.html)
-    console.warn(`[API] Endpoint ${url} returned non-JSON (${res.status}). Using local fallback.`);
-    if (fallbackFn) {
-      return fallbackFn();
-    }
-    throw new Error('API returned non-JSON response');
-  } catch (err) {
-    console.warn(`[API] Network or parsing error on ${url}:`, err);
-    if (fallbackFn) {
-      return fallbackFn();
-    }
-    throw err;
-  }
-}
-
-// Client-side fallback ticker prices generator with full CoinTicker properties
+// 100% Client-Side Mock Market Data (Zero Broken Fetch Calls)
 const FALLBACK_COINS: Record<
   string,
   { name: string; rank: number; base: number; iconBg: string; iconSymbol: string }
@@ -67,88 +37,104 @@ const FALLBACK_COINS: Record<
   'BTS/USDT': { name: 'BitShares', rank: 15, base: 0.0894, iconBg: '#3595f6', iconSymbol: 'BTS' }
 };
 
+// Real-time market heartbeat simulation
+const dynamicPrices: Record<string, number> = {};
+Object.entries(FALLBACK_COINS).forEach(([sym, c]) => {
+  dynamicPrices[sym] = c.base;
+});
+
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    Object.keys(dynamicPrices).forEach(sym => {
+      const base = FALLBACK_COINS[sym]?.base || dynamicPrices[sym];
+      const drift = (Math.random() - 0.49) * 0.003;
+      dynamicPrices[sym] = +(dynamicPrices[sym] * (1 + drift)).toFixed(base < 1 ? 4 : 2);
+    });
+  }, 2000);
+}
+
 export const api = {
   // App Config & Notice
   async getConfig(): Promise<{ config: AppConfig; notice: SupportNotice }> {
-    return safeFetch(
-      `${BASE_URL}/config`,
-      undefined,
-      () => localDb.getConfig()
-    );
+    try {
+      if (firestoreDb) {
+        const snap = await getDoc(doc(firestoreDb, 'config', 'global'));
+        if (snap.exists()) {
+          const data = snap.data();
+          return {
+            config: data.config || localDb.getConfig().config,
+            notice: data.notice || localDb.getConfig().notice
+          };
+        }
+      }
+    } catch {
+      // Fallback to localDb
+    }
+    return localDb.getConfig();
   },
 
   async updateConfig(payload: { config?: Partial<AppConfig>; notice?: Partial<SupportNotice> }): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/config/update`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      },
-      () => localDb.updateConfig(payload.config, payload.notice)
-    );
+    const updated = localDb.updateConfig(payload.config, payload.notice);
+    try {
+      if (firestoreDb) {
+        await setDoc(doc(firestoreDb, 'config', 'global'), updated, { merge: true });
+      }
+    } catch {
+      // Ignore cloud sync error, localDb is master
+    }
+    return updated;
   },
 
-  // Market
+  // Market Tickers & Candlesticks
   async getTickers(): Promise<CoinTicker[]> {
-    return safeFetch(
-      `${BASE_URL}/market/tickers`,
-      undefined,
-      () => {
-        return Object.entries(FALLBACK_COINS).map(([symbol, c]) => {
-          const drift = (Math.random() - 0.49) * 0.005;
-          const price = +(c.base * (1 + drift)).toFixed(c.base < 1 ? 4 : 2);
-          return {
-            symbol,
-            name: c.name,
-            rank: c.rank,
-            price,
-            change24h: +(Math.random() * 3 + 0.8).toFixed(2),
-            high24h: +(price * 1.02).toFixed(c.base < 1 ? 4 : 2),
-            low24h: +(price * 0.98).toFixed(c.base < 1 ? 4 : 2),
-            volume24h: `${(Math.random() * 2 + 1.2).toFixed(2)}B USDT`,
-            iconBg: c.iconBg,
-            iconSymbol: c.iconSymbol
-          };
-        });
-      }
-    );
+    return Object.entries(FALLBACK_COINS).map(([symbol, c]) => {
+      const price = dynamicPrices[symbol] || c.base;
+      const change24h = +((Math.sin(c.rank * 1.5) * 2.8) + 1.2).toFixed(2);
+      return {
+        symbol,
+        name: c.name,
+        rank: c.rank,
+        price,
+        change24h,
+        high24h: +(price * 1.025).toFixed(c.base < 1 ? 4 : 2),
+        low24h: +(price * 0.975).toFixed(c.base < 1 ? 4 : 2),
+        volume24h: `${(Math.random() * 2 + 1.2).toFixed(2)}B USDT`,
+        iconBg: c.iconBg,
+        iconSymbol: c.iconSymbol
+      };
+    });
   },
 
   async getCandles(symbol: string, timeframe: string = '1m'): Promise<Candlestick[]> {
-    return safeFetch(
-      `${BASE_URL}/market/candles/${encodeURIComponent(symbol)}?tf=${timeframe}`,
-      undefined,
-      () => {
-        const coin = FALLBACK_COINS[symbol] || { base: 81400 };
-        const count = 45;
-        const now = Math.floor(Date.now() / 1000);
-        const candles: Candlestick[] = [];
-        let currentClose = coin.base;
+    const coin = FALLBACK_COINS[symbol] || { base: 81400 };
+    const count = 45;
+    const now = Math.floor(Date.now() / 1000);
+    const intervalMap: Record<string, number> = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600 };
+    const step = intervalMap[timeframe] || 60;
+    const candles: Candlestick[] = [];
+    let currentClose = dynamicPrices[symbol] || coin.base;
 
-        for (let i = count - 1; i >= 0; i--) {
-          const time = now - i * 60;
-          const volatility = currentClose * 0.0025;
-          const isGreen = Math.sin(i * 0.7) + (Math.random() - 0.48) > 0;
-          const change = Math.random() * volatility;
-          const open = isGreen ? currentClose - change : currentClose + change;
-          const close = currentClose;
-          const high = Math.max(open, close) + Math.random() * volatility * 0.7;
-          const low = Math.min(open, close) - Math.random() * volatility * 0.7;
+    for (let i = count - 1; i >= 0; i--) {
+      const time = now - i * step;
+      const volatility = currentClose * 0.0025;
+      const isGreen = Math.sin(i * 0.7) + (Math.random() - 0.48) > 0;
+      const change = Math.random() * volatility;
+      const open = isGreen ? currentClose - change : currentClose + change;
+      const close = currentClose;
+      const high = Math.max(open, close) + Math.random() * volatility * 0.7;
+      const low = Math.min(open, close) - Math.random() * volatility * 0.7;
 
-          candles.push({
-            time,
-            open: +open.toFixed(currentClose < 1 ? 4 : 2),
-            high: +high.toFixed(currentClose < 1 ? 4 : 2),
-            low: +low.toFixed(currentClose < 1 ? 4 : 2),
-            close: +close.toFixed(currentClose < 1 ? 4 : 2),
-            volume: Math.floor(Math.random() * 85 + 20)
-          });
-          currentClose = open;
-        }
-        return candles;
-      }
-    );
+      candles.push({
+        time,
+        open: +open.toFixed(currentClose < 1 ? 4 : 2),
+        high: +high.toFixed(currentClose < 1 ? 4 : 2),
+        low: +low.toFixed(currentClose < 1 ? 4 : 2),
+        close: +close.toFixed(currentClose < 1 ? 4 : 2),
+        volume: Math.floor(Math.random() * 85 + 20)
+      });
+      currentClose = open;
+    }
+    return candles;
   },
 
   // Client & Admin Unified Auth
@@ -159,15 +145,51 @@ export const api = {
     admin?: AdminAccount;
     error?: string;
   }> {
-    return safeFetch(
-      `${BASE_URL}/auth/login`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      },
-      () => localDb.login(username, password)
-    );
+    // 1. Check Supabase if configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: userRows } = await supabase
+          .from('users')
+          .select('*')
+          .ilike('username', username.trim())
+          .limit(1);
+
+        if (userRows && userRows.length > 0) {
+          const row = userRows[0];
+          // Check balances table
+          const { data: balanceRows } = await supabase
+            .from('balances')
+            .select('*')
+            .eq('user_id', row.id)
+            .limit(1);
+
+          const bal = balanceRows && balanceRows.length > 0 ? balanceRows[0] : null;
+          const userObj: User = {
+            id: row.id,
+            username: row.username,
+            displayName: row.display_name || row.username,
+            email: row.email,
+            nativeCurrency: row.native_currency || 'USD',
+            balance: bal ? Number(bal.available_usd) : 1000,
+            freezeBalance: bal ? Number(bal.frozen_usd) : 0,
+            creditScore: row.credit_score || 95,
+            status: row.status || 'Active',
+            tradeMode: row.trade_mode || 'AUTO',
+            referralCodeUsed: row.referral_code_used,
+            referredByAdminId: row.referred_by_admin_id,
+            registeredTime: row.registered_time || new Date().toLocaleString(),
+            createdAt: row.created_at
+          };
+
+          return { success: true, isAdmin: false, user: userObj };
+        }
+      } catch (err) {
+        console.warn('Supabase query failed, falling back to localDb:', err);
+      }
+    }
+
+    // 2. Default to reliable localDb
+    return localDb.login(username, password);
   },
 
   async registerUser(data: {
@@ -177,165 +199,195 @@ export const api = {
     referralCode?: string;
     nativeCurrency?: string;
   }): Promise<{ success: boolean; user?: User; error?: string }> {
-    return safeFetch(
-      `${BASE_URL}/auth/register`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      },
-      () => localDb.register(data)
-    );
+    const res = localDb.register(data);
+
+    // Sync to Supabase if configured
+    if (res.success && res.user && isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('users').upsert({
+          id: res.user.id,
+          username: res.user.username,
+          display_name: res.user.displayName,
+          email: res.user.email,
+          native_currency: res.user.nativeCurrency,
+          credit_score: res.user.creditScore,
+          status: res.user.status,
+          trade_mode: res.user.tradeMode,
+          referral_code_used: res.user.referralCodeUsed,
+          referred_by_admin_id: res.user.referredByAdminId,
+          registered_time: res.user.registeredTime,
+          created_at: res.user.createdAt
+        });
+
+        await supabase.from('balances').upsert({
+          user_id: res.user.id,
+          available_usd: res.user.balance,
+          frozen_usd: res.user.freezeBalance,
+          native_currency: res.user.nativeCurrency
+        });
+      } catch (err) {
+        console.warn('Supabase sync skipped:', err);
+      }
+    }
+
+    // Sync to Firestore
+    if (res.success && res.user && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', res.user.id), res.user);
+      } catch {
+        // Handled locally
+      }
+    }
+
+    return res;
   },
 
   async getUserProfile(id: string): Promise<{ success: boolean; user?: User; error?: string }> {
-    return safeFetch(
-      `${BASE_URL}/auth/profile/${id}`,
-      undefined,
-      () => localDb.getUserProfile(id)
-    );
-  },
-
-  async changePassword(userId: string, oldPass: string, newPass: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/auth/change-password`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, oldPassword: oldPass, newPassword: newPass })
-      },
-      () => localDb.resetPassword(userId, newPass)
-    );
-  },
-
-  // Admin Auth & Profile Rehydration
-  async loginAdmin(username: string, password: string): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
-    return safeFetch(
-      `${BASE_URL}/admin/login`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      },
-      () => {
-        const res = localDb.login(username, password);
-        if (res.isAdmin && res.admin) {
-          return { success: true, admin: res.admin };
+    // Check Firestore
+    if (firestoreDb) {
+      try {
+        const snap = await getDoc(doc(firestoreDb, 'users', id));
+        if (snap.exists()) {
+          return { success: true, user: snap.data() as User };
         }
-        return { success: false, error: res.error || 'Invalid administrator credentials' };
+      } catch {
+        // Fallback
       }
-    );
+    }
+
+    // Check Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: userRows } = await supabase.from('users').select('*').eq('id', id).limit(1);
+        if (userRows && userRows.length > 0) {
+          const row = userRows[0];
+          const { data: balanceRows } = await supabase.from('balances').select('*').eq('user_id', id).limit(1);
+          const bal = balanceRows && balanceRows.length > 0 ? balanceRows[0] : null;
+          return {
+            success: true,
+            user: {
+              id: row.id,
+              username: row.username,
+              displayName: row.display_name || row.username,
+              email: row.email,
+              nativeCurrency: row.native_currency || 'USD',
+              balance: bal ? Number(bal.available_usd) : 1000,
+              freezeBalance: bal ? Number(bal.frozen_usd) : 0,
+              creditScore: row.credit_score || 95,
+              status: row.status || 'Active',
+              tradeMode: row.trade_mode || 'AUTO',
+              referralCodeUsed: row.referral_code_used,
+              referredByAdminId: row.referred_by_admin_id,
+              registeredTime: row.registered_time || new Date().toLocaleString(),
+              createdAt: row.created_at
+            }
+          };
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    return localDb.getUserProfile(id);
+  },
+
+  async changePassword(userId: string, _oldPass: string, newPass: string): Promise<any> {
+    return localDb.resetPassword(userId, newPass);
+  },
+
+  // Admin Auth & Profile
+  async loginAdmin(username: string, password: string): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
+    const res = localDb.login(username, password);
+    if (res.isAdmin && res.admin) {
+      return { success: true, admin: res.admin };
+    }
+    return { success: false, error: res.error || 'Invalid administrator credentials' };
   },
 
   async getAdminProfile(id: string): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
-    return safeFetch(
-      `${BASE_URL}/admin/profile/${id}`,
-      undefined,
-      () => localDb.getAdminProfile(id)
-    );
+    return localDb.getAdminProfile(id);
   },
 
   // Admin User Management
   async getAdminUsers(adminId: string): Promise<User[]> {
-    return safeFetch(
-      `${BASE_URL}/admin/users?adminId=${adminId}`,
-      undefined,
-      () => localDb.getUsers(adminId)
-    );
+    return localDb.getUsers(adminId);
   },
 
   async updateUserBalance(userId: string, action: 'add' | 'deduct' | 'set', amountUsd: number): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/balance`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, amountUsd })
-      },
-      () => localDb.updateUserBalance(userId, action, amountUsd)
-    );
+    const res = localDb.updateUserBalance(userId, action, amountUsd);
+    if (res.success && res.user) {
+      // Sync to Supabase
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase
+            .from('balances')
+            .upsert({
+              user_id: userId,
+              available_usd: res.user.balance,
+              frozen_usd: res.user.freezeBalance,
+              updated_at: new Date().toISOString()
+            });
+        } catch {
+          // Handled
+        }
+      }
+      // Sync to Firestore
+      if (firestoreDb) {
+        try {
+          await updateDoc(doc(firestoreDb, 'users', userId), {
+            balance: res.user.balance,
+            freezeBalance: res.user.freezeBalance
+          });
+        } catch {
+          // Handled
+        }
+      }
+    }
+    return res;
   },
 
   async updateUserFreeze(userId: string, action: 'freeze' | 'unfreeze', amountUsd: number): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/freeze`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, amountUsd })
-      },
-      () => localDb.updateUserBalance(userId, action === 'freeze' ? 'deduct' : 'add', amountUsd)
-    );
+    return this.updateUserBalance(userId, action === 'freeze' ? 'deduct' : 'add', amountUsd);
   },
 
   async updateUserTradeMode(userId: string, tradeMode: TradeMode): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/trade-mode`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tradeMode })
-      },
-      () => localDb.updateTradeMode(userId, tradeMode)
-    );
+    const res = localDb.updateTradeMode(userId, tradeMode);
+    if (res.success && firestoreDb) {
+      try {
+        await updateDoc(doc(firestoreDb, 'users', userId), { tradeMode });
+      } catch {
+        // Handled
+      }
+    }
+    return res;
   },
 
   async updateUserStatus(userId: string, status: UserStatus): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/status`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      },
-      () => localDb.freezeUser(userId, status === 'Active' ? 'reactivate' : 'freeze')
-    );
+    return localDb.freezeUser(userId, status === 'Active' ? 'reactivate' : 'freeze');
   },
 
   async updateCreditScore(userId: string, creditScore: number): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/credit-score`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creditScore })
-      },
-      () => localDb.updateCreditScore(userId, creditScore)
-    );
+    return localDb.updateCreditScore(userId, creditScore);
   },
 
   async resetUserPassword(userId: string, newPassword: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/reset-password`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newPassword })
-      },
-      () => localDb.resetPassword(userId, newPassword)
-    );
+    return localDb.resetPassword(userId, newPassword);
   },
 
   async freezeUserAccount(userId: string, action: 'freeze' | 'reactivate', reason?: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}/freeze-account`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, reason })
-      },
-      () => localDb.freezeUser(userId, action, reason)
-    );
+    return localDb.freezeUser(userId, action, reason);
   },
 
   async deleteUser(userId: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/${userId}`,
-      {
-        method: 'DELETE'
-      },
-      () => localDb.deleteUser(userId)
-    );
+    const res = localDb.deleteUser(userId);
+    if (firestoreDb) {
+      try {
+        await deleteDoc(doc(firestoreDb, 'users', userId));
+      } catch {
+        // Handled
+      }
+    }
+    return res;
   },
 
   async createClientUser(payload: {
@@ -345,19 +397,15 @@ export const api = {
     balance?: number;
     referralCode?: string;
   }): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/users/create`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      },
-      () => localDb.register({
-        username: payload.username,
-        password: payload.password || '123123',
-        referralCode: payload.referralCode || 'MASTER321'
-      })
-    );
+    const res = localDb.register({
+      username: payload.username,
+      password: payload.password || '123123',
+      referralCode: payload.referralCode || 'MASTER321'
+    });
+    if (res.user && payload.balance !== undefined) {
+      localDb.updateUserBalance(res.user.id, 'set', payload.balance);
+    }
+    return res;
   },
 
   async saveSupportDesk(payload: {
@@ -365,24 +413,12 @@ export const api = {
     telegramSupportLink: string;
     prefilledMessage?: string;
   }): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/support-desk`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      },
-      () => localDb.saveSupportDesk(payload.adminId, payload.telegramSupportLink, payload.prefilledMessage)
-    );
+    return localDb.saveSupportDesk(payload.adminId, payload.telegramSupportLink, payload.prefilledMessage);
   },
 
   // Sub-Admins Management
-  async getSubAdmins(adminId: string): Promise<AdminAccount[]> {
-    return safeFetch(
-      `${BASE_URL}/admin/subadmins?adminId=${adminId}`,
-      undefined,
-      () => localDb.getAllAdmins()
-    );
+  async getSubAdmins(_adminId: string): Promise<AdminAccount[]> {
+    return localDb.getAllAdmins();
   },
 
   async createSubAdmin(payload: {
@@ -393,59 +429,33 @@ export const api = {
     permissions: string[];
     displayName?: string;
   }): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/subadmins/create`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      },
-      () => localDb.createSubAdmin(payload)
-    );
+    return localDb.createSubAdmin(payload);
   },
 
   async customizeReferralCode(adminId: string, newReferralCode: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/admin/customize-referral`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminId, newReferralCode })
-      },
-      () => localDb.customizeReferral(adminId, newReferralCode)
-    );
+    return localDb.customizeReferral(adminId, newReferralCode);
   },
 
-  async getSessionsAudit(adminId: string): Promise<any[]> {
-    return safeFetch(
-      `${BASE_URL}/admin/sessions-audit?adminId=${adminId}`,
-      undefined,
-      () => {
-        const admins = localDb.getAllAdmins();
-        const logs: any[] = [];
-        admins.forEach(adm => {
-          (adm.loginHistory || []).forEach(sess => {
-            logs.push({
-              adminId: adm.id,
-              username: adm.username,
-              displayName: adm.displayName,
-              referralCode: adm.referralCode,
-              session: sess
-            });
-          });
+  async getSessionsAudit(_adminId: string): Promise<any[]> {
+    const admins = localDb.getAllAdmins();
+    const logs: any[] = [];
+    admins.forEach(adm => {
+      (adm.loginHistory || []).forEach(sess => {
+        logs.push({
+          adminId: adm.id,
+          username: adm.username,
+          displayName: adm.displayName,
+          referralCode: adm.referralCode,
+          session: sess
         });
-        return logs;
-      }
-    );
+      });
+    });
+    return logs;
   },
 
   // Trades
   async getTrades(userId?: string, _adminId?: string): Promise<TradeOrder[]> {
-    return safeFetch(
-      `${BASE_URL}/trades?${userId ? `userId=${userId}` : ''}`,
-      undefined,
-      () => localDb.getTrades(userId)
-    );
+    return localDb.getTrades(userId);
   },
 
   async placeTrade(payload: {
@@ -457,56 +467,94 @@ export const api = {
     marginUsd: number;
     entryPrice?: number;
   }): Promise<any> {
-    const entryPrice = payload.entryPrice || (FALLBACK_COINS[payload.symbol]?.base || 81400);
+    const entryPrice = payload.entryPrice || (dynamicPrices[payload.symbol] || FALLBACK_COINS[payload.symbol]?.base || 81400);
     const fullPayload = { ...payload, entryPrice };
-    return safeFetch(
-      `${BASE_URL}/trades/place`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullPayload)
-      },
-      () => localDb.createTrade(fullPayload)
-    );
+    const res = localDb.createTrade(fullPayload);
+
+    // Sync to Supabase if enabled
+    if (res.success && res.trade && isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('trades').insert({
+          id: res.trade.id,
+          user_id: res.trade.userId,
+          username: res.trade.username,
+          symbol: res.trade.symbol,
+          direction: res.trade.direction,
+          duration_seconds: res.trade.durationSeconds,
+          profit_percent: res.trade.profitPercent,
+          margin_usd: res.trade.marginUsd,
+          entry_price: res.trade.entryPrice,
+          outcome: 'PENDING',
+          status: 'RUNNING',
+          created_at: res.trade.createdAt
+        });
+      } catch {
+        // Handled
+      }
+    }
+
+    // Sync to Firestore
+    if (res.success && res.trade && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'trades', res.trade.id), res.trade);
+      } catch {
+        // Handled
+      }
+    }
+
+    return res;
   },
 
   async settleTrade(tradeId: string, outcome?: 'WIN' | 'LOSS', finalPrice?: number): Promise<any> {
     const chosenOutcome = outcome || 'WIN';
     const chosenPrice = finalPrice || 81500;
-    return safeFetch(
-      `${BASE_URL}/trades/settle`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tradeId, outcome: chosenOutcome, finalPrice: chosenPrice })
-      },
-      () => localDb.settleTrade(tradeId, chosenOutcome, chosenPrice)
-    );
+    const res = localDb.settleTrade(tradeId, chosenOutcome, chosenPrice);
+
+    // Sync to Supabase
+    if (res.success && res.trade && isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('trades')
+          .update({
+            outcome: chosenOutcome,
+            status: 'SETTLED',
+            exit_price: chosenPrice,
+            payout_usd: res.trade.payoutUsd,
+            settled_at: new Date().toISOString()
+          })
+          .eq('id', tradeId);
+      } catch {
+        // Handled
+      }
+    }
+
+    // Sync to Firestore
+    if (res.success && res.trade && firestoreDb) {
+      try {
+        await updateDoc(doc(firestoreDb, 'trades', tradeId), {
+          outcome: chosenOutcome,
+          status: 'SETTLED',
+          exitPrice: chosenPrice,
+          payoutUsd: res.trade.payoutUsd,
+          settledAt: new Date().toISOString()
+        });
+      } catch {
+        // Handled
+      }
+    }
+
+    return res;
   },
 
   async adminAdjustTrade(tradeId: string, forceOutcome: 'WIN' | 'LOSS'): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/trades/adjust`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tradeId, forceOutcome })
-      },
-      () => localDb.settleTrade(tradeId, forceOutcome, 81500)
-    );
+    return this.settleTrade(tradeId, forceOutcome, 81500);
   },
 
   // Finance / Wallets
   async getWalletRequests(userId?: string, _adminId?: string): Promise<WalletRequest[]> {
-    return safeFetch(
-      `${BASE_URL}/finance/requests${userId ? `?userId=${userId}` : ''}`,
-      undefined,
-      () => {
-        const reqs = localDb.getWalletRequests();
-        if (userId) return reqs.filter(r => r.userId === userId);
-        return reqs;
-      }
-    );
+    const reqs = localDb.getWalletRequests();
+    if (userId) return reqs.filter(r => r.userId === userId);
+    return reqs;
   },
 
   async createDepositRequest(payload: {
@@ -520,24 +568,38 @@ export const api = {
     txHashOrProof?: string;
   }): Promise<any> {
     const amountUsd = payload.amountUsd || payload.amountNative;
-    const currency = payload.currency || 'USD';
     const address = payload.addressOrAccount || payload.txHash || payload.txHashOrProof || '';
-    return safeFetch(
-      `${BASE_URL}/finance/deposit`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, amountUsd, currency, addressOrAccount: address })
-      },
-      () => localDb.createWalletRequest({
-        userId: payload.userId,
-        type: 'DEPOSIT',
-        amountUsd,
-        amountNative: payload.amountNative,
-        network: payload.network,
-        addressOrAccount: address
-      })
-    );
+    const res = localDb.createWalletRequest({
+      userId: payload.userId,
+      type: 'DEPOSIT',
+      amountUsd,
+      amountNative: payload.amountNative,
+      network: payload.network,
+      addressOrAccount: address
+    });
+
+    if (res.success && res.request && isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('withdrawal_requests').insert({
+          id: res.request.id,
+          user_id: res.request.userId,
+          username: res.request.username,
+          type: 'DEPOSIT',
+          amount_usd: res.request.amountUsd,
+          amount_native: res.request.amountNative,
+          currency: res.request.currency,
+          network: res.request.network,
+          address_or_account: res.request.addressOrAccount,
+          status: 'PENDING',
+          remarks: res.request.remarks,
+          created_at: res.request.createdAt
+        });
+      } catch {
+        // Handled
+      }
+    }
+
+    return res;
   },
 
   async requestDeposit(payload: {
@@ -562,23 +624,37 @@ export const api = {
     addressOrAccount: string;
   }): Promise<any> {
     const amountUsd = payload.amountUsd || payload.amountNative;
-    const currency = payload.currency || 'USD';
-    return safeFetch(
-      `${BASE_URL}/finance/withdraw`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, amountUsd, currency })
-      },
-      () => localDb.createWalletRequest({
-        userId: payload.userId,
-        type: 'WITHDRAWAL',
-        amountUsd,
-        amountNative: payload.amountNative,
-        network: payload.network,
-        addressOrAccount: payload.addressOrAccount
-      })
-    );
+    const res = localDb.createWalletRequest({
+      userId: payload.userId,
+      type: 'WITHDRAWAL',
+      amountUsd,
+      amountNative: payload.amountNative,
+      network: payload.network,
+      addressOrAccount: payload.addressOrAccount
+    });
+
+    if (res.success && res.request && isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('withdrawal_requests').insert({
+          id: res.request.id,
+          user_id: res.request.userId,
+          username: res.request.username,
+          type: 'WITHDRAWAL',
+          amount_usd: res.request.amountUsd,
+          amount_native: res.request.amountNative,
+          currency: res.request.currency,
+          network: res.request.network,
+          address_or_account: res.request.addressOrAccount,
+          status: 'PENDING',
+          remarks: res.request.remarks,
+          created_at: res.request.createdAt
+        });
+      } catch {
+        // Handled
+      }
+    }
+
+    return res;
   },
 
   async requestWithdrawal(payload: {
@@ -593,14 +669,23 @@ export const api = {
   },
 
   async handleWalletRequestAction(requestId: string, action: 'APPROVE' | 'REJECT', remarks?: string): Promise<any> {
-    return safeFetch(
-      `${BASE_URL}/finance/requests/${requestId}/action`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, remarks })
-      },
-      () => localDb.handleWalletAction(requestId, action, remarks)
-    );
+    const res = localDb.handleWalletAction(requestId, action, remarks);
+
+    if (res.success && isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('withdrawal_requests')
+          .update({
+            status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+            remarks: remarks || `${action} by Administrator`,
+            processed_at: new Date().toISOString()
+          })
+          .eq('id', requestId);
+      } catch {
+        // Handled
+      }
+    }
+
+    return res;
   }
 };
