@@ -137,7 +137,7 @@ export const api = {
     return candles;
   },
 
-  // Client & Admin Unified Auth
+  // Client & Admin Unified Auth (Direct Supabase client queries, Zero REST fetch)
   async loginUser(username: string, password: string): Promise<{
     success: boolean;
     user?: User;
@@ -145,18 +145,46 @@ export const api = {
     admin?: AdminAccount;
     error?: string;
   }> {
-    // 1. Check Supabase if configured
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
+
+    // 1. Direct Supabase Client Query
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: userRows } = await supabase
+        const { data: userRows, error } = await supabase
           .from('users')
           .select('*')
-          .ilike('username', username.trim())
+          .ilike('username', cleanUser)
           .limit(1);
 
-        if (userRows && userRows.length > 0) {
+        if (!error && userRows && userRows.length > 0) {
           const row = userRows[0];
-          // Check balances table
+
+          // Check password
+          if (row.password_hash && row.password_hash !== cleanPass) {
+            return { success: false, error: 'Invalid password. Please check capitalization.' };
+          }
+
+          if (row.status === 'Suspended' || row.status === 'Frozen') {
+            return { success: false, error: `Account is ${row.status}. Contact Support Desk.` };
+          }
+
+          // Check if admin role
+          if (['SUPREME_OWNER', 'SUPER_ADMIN', 'SUB_ADMIN', 'ADMIN'].includes(row.role)) {
+            const adminObj: AdminAccount = {
+              id: row.id,
+              username: row.username,
+              displayName: row.display_name || row.username,
+              role: row.role as any,
+              referralCode: row.referral_code_used || 'ROOT786',
+              permissions: ['manage_users', 'manage_trades', 'manage_finance', 'manage_notices', 'manage_subadmins'],
+              loginHistory: [],
+              createdAt: row.created_at
+            };
+            return { success: true, isAdmin: true, admin: adminObj };
+          }
+
+          // Fetch real-time balances from public.balances
           const { data: balanceRows } = await supabase
             .from('balances')
             .select('*')
@@ -170,8 +198,8 @@ export const api = {
             displayName: row.display_name || row.username,
             email: row.email,
             nativeCurrency: row.native_currency || 'USD',
-            balance: bal ? Number(bal.available_usd) : 1000,
-            freezeBalance: bal ? Number(bal.frozen_usd) : 0,
+            balance: bal ? Number(bal.available_usd) : 1000.0,
+            freezeBalance: bal ? Number(bal.frozen_usd) : 0.0,
             creditScore: row.credit_score || 95,
             status: row.status || 'Active',
             tradeMode: row.trade_mode || 'AUTO',
@@ -181,14 +209,15 @@ export const api = {
             createdAt: row.created_at
           };
 
+          localDb.addUser(userObj);
           return { success: true, isAdmin: false, user: userObj };
         }
       } catch (err) {
-        console.warn('Supabase query failed, falling back to localDb:', err);
+        console.warn('Supabase login check failed, falling back to localDb:', err);
       }
     }
 
-    // 2. Default to reliable localDb
+    // 2. Local fallback
     return localDb.login(username, password);
   },
 
@@ -199,47 +228,109 @@ export const api = {
     referralCode?: string;
     nativeCurrency?: string;
   }): Promise<{ success: boolean; user?: User; error?: string }> {
-    const res = localDb.register(data);
+    const cleanUser = data.username.trim();
+    const cleanPass = (data.password || '123123').trim();
+    const cleanFullName = (data.fullName || cleanUser).trim();
+    const cleanRef = (data.referralCode || 'MASTER321').trim().toUpperCase();
+    const currency = data.nativeCurrency || 'USD';
 
-    // Sync to Supabase if configured
-    if (res.success && res.user && isSupabaseConfigured && supabase) {
+    if (!cleanUser || cleanUser.length < 3) {
+      return { success: false, error: 'Username must be at least 3 characters.' };
+    }
+    if (cleanPass.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters.' };
+    }
+
+    // 1. Direct Supabase Client Registration
+    if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('users').upsert({
-          id: res.user.id,
-          username: res.user.username,
-          display_name: res.user.displayName,
-          email: res.user.email,
-          native_currency: res.user.nativeCurrency,
-          credit_score: res.user.creditScore,
-          status: res.user.status,
-          trade_mode: res.user.tradeMode,
-          referral_code_used: res.user.referralCodeUsed,
-          referred_by_admin_id: res.user.referredByAdminId,
-          registered_time: res.user.registeredTime,
-          created_at: res.user.createdAt
-        });
+        // Check duplicate username directly
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id, username')
+          .ilike('username', cleanUser)
+          .limit(1);
 
-        await supabase.from('balances').upsert({
-          user_id: res.user.id,
-          available_usd: res.user.balance,
-          frozen_usd: res.user.freezeBalance,
-          native_currency: res.user.nativeCurrency
-        });
+        if (existingUser && existingUser.length > 0) {
+          return { success: false, error: 'Username already registered. Please choose another.' };
+        }
+
+        // Validate referral code directly
+        let referredByAdminId = 'admin_master_002';
+        const { data: adminRows } = await supabase
+          .from('users')
+          .select('id, referral_code_used')
+          .ilike('referral_code_used', cleanRef)
+          .limit(1);
+
+        if (adminRows && adminRows.length > 0) {
+          referredByAdminId = adminRows[0].id;
+        }
+
+        const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const now = new Date();
+        const dateFormatted = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+        // Direct insert into public.users
+        const { error: insertUserError } = await supabase
+          .from('users')
+          .insert([{
+            id: newUserId,
+            username: cleanUser,
+            display_name: cleanFullName,
+            password_hash: cleanPass,
+            email: `${cleanUser}@flowcoin.io`,
+            role: 'USER',
+            native_currency: currency,
+            credit_score: 95,
+            status: 'Active',
+            trade_mode: 'AUTO',
+            referred_by_admin_id: referredByAdminId,
+            referral_code_used: cleanRef,
+            registered_time: dateFormatted,
+            created_at: now.toISOString()
+          }]);
+
+        if (!insertUserError) {
+          // Direct insert into public.balances
+          await supabase
+            .from('balances')
+            .insert([{
+              user_id: newUserId,
+              available_usd: 1000.0,
+              frozen_usd: 0.0,
+              native_currency: currency,
+              exchange_rate: 1.0
+            }]);
+
+          const newUser: User = {
+            id: newUserId,
+            username: cleanUser,
+            displayName: cleanFullName,
+            email: `${cleanUser}@flowcoin.io`,
+            nativeCurrency: currency as any,
+            balance: 1000.0,
+            freezeBalance: 0.0,
+            creditScore: 95,
+            status: 'Active',
+            tradeMode: 'AUTO',
+            referredByAdminId,
+            referralCodeUsed: cleanRef,
+            isNew: true,
+            registeredTime: dateFormatted,
+            createdAt: now.toISOString()
+          };
+
+          localDb.addUser(newUser);
+          return { success: true, user: newUser };
+        }
       } catch (err) {
-        console.warn('Supabase sync skipped:', err);
+        console.warn('Supabase direct insert encountered an issue, using localDb:', err);
       }
     }
 
-    // Sync to Firestore
-    if (res.success && res.user && firestoreDb) {
-      try {
-        await setDoc(doc(firestoreDb, 'users', res.user.id), res.user);
-      } catch {
-        // Handled locally
-      }
-    }
-
-    return res;
+    // 2. Reliable Local Storage Registration
+    return localDb.register(data);
   },
 
   async getUserProfile(id: string): Promise<{ success: boolean; user?: User; error?: string }> {

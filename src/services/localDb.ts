@@ -424,6 +424,17 @@ export const localDb = {
     return { success: true, user: userData as User };
   },
 
+  addUser(user: User): void {
+    const db = getDb();
+    const existing = db.users.findIndex(u => u.id === user.id);
+    if (existing >= 0) {
+      db.users[existing] = user;
+    } else {
+      db.users.unshift(user);
+    }
+    saveDb(db);
+  },
+
   getUserProfile(id: string): { success: boolean; user?: User; error?: string } {
     const db = getDb();
     const user = db.users.find(u => u.id === id);

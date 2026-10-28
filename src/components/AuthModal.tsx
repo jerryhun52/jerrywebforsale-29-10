@@ -17,6 +17,7 @@ import { User, AdminAccount, Currency } from '../types.ts';
 import { cleanMobileInput } from '../utils/sanitizer.ts';
 import { api } from '../services/api.ts';
 import { localDb } from '../services/localDb.ts';
+import { supabase, isSupabaseConfigured } from '../services/supabase.ts';
 
 interface CountryCurrencyOption {
   code: Currency;
@@ -157,14 +158,85 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       if (mode === 'login') {
-        const res = await api.loginUser(cleanUser, cleanPass);
+        // Direct Supabase Client Login Query
+        if (isSupabaseConfigured && supabase) {
+          const { data: userRows, error: userErr } = await supabase
+            .from('users')
+            .select('*')
+            .ilike('username', cleanUser)
+            .limit(1);
+
+          if (!userErr && userRows && userRows.length > 0) {
+            const row = userRows[0];
+
+            if (row.password_hash && row.password_hash !== cleanPass) {
+              setError('Invalid password. Please check capitalization.');
+              setLoading(false);
+              return;
+            }
+
+            if (row.status === 'Suspended' || row.status === 'Frozen') {
+              setError(`Account is ${row.status}. Contact Support Desk.`);
+              setLoading(false);
+              return;
+            }
+
+            // Check if admin account
+            if (['SUPREME_OWNER', 'SUPER_ADMIN', 'SUB_ADMIN', 'ADMIN'].includes(row.role)) {
+              const adminObj: AdminAccount = {
+                id: row.id,
+                username: row.username,
+                displayName: row.display_name || row.username,
+                role: row.role as any,
+                referralCode: row.referral_code_used || 'ROOT786',
+                permissions: ['manage_users', 'manage_trades', 'manage_finance', 'manage_notices', 'manage_subadmins'],
+                loginHistory: [],
+                createdAt: row.created_at
+              };
+              localStorage.setItem('flowcoin_admin_id', adminObj.id);
+              if (onAdminLoginSuccess) onAdminLoginSuccess(adminObj);
+              onClose();
+              return;
+            }
+
+            // Fetch balances
+            const { data: balRows } = await supabase
+              .from('balances')
+              .select('available_usd, frozen_usd')
+              .eq('user_id', row.id)
+              .limit(1);
+
+            const bal = balRows && balRows.length > 0 ? balRows[0] : null;
+            const userObj: User = {
+              id: row.id,
+              username: row.username,
+              displayName: row.display_name || row.username,
+              email: row.email,
+              nativeCurrency: row.native_currency || 'USD',
+              balance: bal ? Number(bal.available_usd) : 1000.0,
+              freezeBalance: bal ? Number(bal.frozen_usd) : 0.0,
+              creditScore: row.credit_score || 95,
+              status: row.status || 'Active',
+              tradeMode: row.trade_mode || 'AUTO',
+              referralCodeUsed: row.referral_code_used,
+              referredByAdminId: row.referred_by_admin_id,
+              registeredTime: row.registered_time || new Date().toLocaleString(),
+              createdAt: row.created_at
+            };
+
+            localDb.addUser(userObj);
+            onLoginSuccess(userObj);
+            onClose();
+            return;
+          }
+        }
+
+        // Local storage auth fallback (No fetch network request)
+        const res = localDb.login(cleanUser, cleanPass);
         if (res.success) {
           if (res.isAdmin && res.admin) {
-            // Admin authenticated seamlessly!
             localStorage.setItem('flowcoin_admin_id', res.admin.id);
-            if (onAdminLoginSuccess) {
-              onAdminLoginSuccess(res.admin);
-            }
+            if (onAdminLoginSuccess) onAdminLoginSuccess(res.admin);
             onClose();
           } else if (res.user) {
             onLoginSuccess(res.user);
@@ -174,13 +246,107 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setError(res.error || 'Login failed. Check your username and password.');
         }
       } else {
-        const res = await api.registerUser({
+        // Direct Supabase Client Registration Query (No fetch)
+        if (isSupabaseConfigured && supabase) {
+          const cleanRef = cleanMobileInput(referralCode).toUpperCase();
+
+          // 1. Direct username duplicate check
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('id, username')
+            .ilike('username', cleanUser)
+            .limit(1);
+
+          if (existingUser && existingUser.length > 0) {
+            setError('Username already registered. Please choose another.');
+            setLoading(false);
+            return;
+          }
+
+          // 2. Direct referral check
+          let referredByAdminId = 'admin_master_002';
+          const { data: adminMatch } = await supabase
+            .from('users')
+            .select('id, referral_code_used')
+            .ilike('referral_code_used', cleanRef)
+            .limit(1);
+
+          if (adminMatch && adminMatch.length > 0) {
+            referredByAdminId = adminMatch[0].id;
+          }
+
+          const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          const now = new Date();
+          const dateFormatted = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+          // 3. Direct insert into users table using Supabase client
+          const { error: insertUserErr } = await supabase
+            .from('users')
+            .insert([{
+              id: newUserId,
+              username: cleanUser,
+              display_name: cleanMobileInput(fullName) || cleanUser,
+              password_hash: cleanPass,
+              email: `${cleanUser}@flowcoin.io`,
+              role: 'USER',
+              native_currency: selectedCurrency,
+              credit_score: 95,
+              status: 'Active',
+              trade_mode: 'AUTO',
+              referred_by_admin_id: referredByAdminId,
+              referral_code_used: cleanRef,
+              registered_time: dateFormatted,
+              created_at: now.toISOString()
+            }]);
+
+          if (insertUserErr) {
+            console.warn('Supabase user insert encountered an issue, using local storage:', insertUserErr);
+          } else {
+            // 4. Direct insert into balances table using Supabase client
+            await supabase
+              .from('balances')
+              .insert([{
+                user_id: newUserId,
+                available_usd: 1000.0,
+                frozen_usd: 0.0,
+                native_currency: selectedCurrency,
+                exchange_rate: 1.0
+              }]);
+
+            const newUser: User = {
+              id: newUserId,
+              username: cleanUser,
+              displayName: cleanMobileInput(fullName) || cleanUser,
+              email: `${cleanUser}@flowcoin.io`,
+              nativeCurrency: selectedCurrency,
+              balance: 1000.0,
+              freezeBalance: 0.0,
+              creditScore: 95,
+              status: 'Active',
+              tradeMode: 'AUTO',
+              referredByAdminId,
+              referralCodeUsed: cleanRef,
+              isNew: true,
+              registeredTime: dateFormatted,
+              createdAt: now.toISOString()
+            };
+
+            localDb.addUser(newUser);
+            onLoginSuccess(newUser);
+            onClose();
+            return;
+          }
+        }
+
+        // Local storage registration fallback (Zero network fetch)
+        const res = localDb.register({
           username: cleanUser,
           fullName: cleanMobileInput(fullName),
           password: cleanPass,
           referralCode: cleanMobileInput(referralCode).toUpperCase(),
           nativeCurrency: selectedCurrency
         });
+
         if (res.success && res.user) {
           onLoginSuccess(res.user);
           onClose();
@@ -189,42 +355,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
     } catch (err: any) {
-      console.warn('Network auth failed, attempting resilient local authentication:', err);
-      // Resilient fallback: guarantees login on static hosts (e.g. Vercel)
-      try {
-        if (mode === 'login') {
-          const fallbackRes = localDb.login(cleanUser, cleanPass);
-          if (fallbackRes.success) {
-            if (fallbackRes.isAdmin && fallbackRes.admin) {
-              localStorage.setItem('flowcoin_admin_id', fallbackRes.admin.id);
-              if (onAdminLoginSuccess) onAdminLoginSuccess(fallbackRes.admin);
-              onClose();
-              return;
-            } else if (fallbackRes.user) {
-              onLoginSuccess(fallbackRes.user);
-              onClose();
-              return;
-            }
-          }
-          setError(fallbackRes.error || 'Invalid credentials. Please verify your login details.');
-        } else {
-          const fallbackRes = localDb.register({
-            username: cleanUser,
-            fullName: cleanMobileInput(fullName),
-            password: cleanPass,
-            referralCode: cleanMobileInput(referralCode).toUpperCase(),
-            nativeCurrency: selectedCurrency
-          });
-          if (fallbackRes.success && fallbackRes.user) {
-            onLoginSuccess(fallbackRes.user);
-            onClose();
-            return;
-          }
-          setError(fallbackRes.error || 'Registration failed. Try a different username.');
-        }
-      } catch (innerErr) {
-        setError('Login failed. Please verify your credentials.');
-      }
+      console.warn('Authentication error:', err);
+      setError(err?.message || 'Authentication error. Please check your credentials.');
     } finally {
       setLoading(false);
     }
