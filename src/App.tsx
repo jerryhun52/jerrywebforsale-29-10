@@ -17,6 +17,7 @@ import { WithdrawModal } from './components/WithdrawModal.tsx';
 import { ChangePasswordModal } from './components/ChangePasswordModal.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 import { AdminPortal } from './components/AdminPortal.tsx';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
 import {
   User,
   Currency,
@@ -65,6 +66,7 @@ export default function App() {
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [initialReferralCode, setInitialReferralCode] = useState<string>('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -96,15 +98,17 @@ export default function App() {
       setIsAuthModalOpen(true);
     }
 
-    // 2. Initial Login as Default User if not landing on a referral link
+    // 2. Initial Login Rehydration on Page Refresh
     if (!referralFromUrl) {
-      const savedUserId = localStorage.getItem('flowcoin_user_id') || 'usr_123123123123';
-      api.getUserProfile(savedUserId).then(res => {
-        if (res.success && res.user) {
-          setUser(res.user);
-          setCurrency(res.user.nativeCurrency || 'USD');
-        }
-      }).catch(console.error);
+      const savedUserId = localStorage.getItem('flowcoin_user_id');
+      if (savedUserId) {
+        api.getUserProfile(savedUserId).then(res => {
+          if (res.success && res.user) {
+            setUser(res.user);
+            setCurrency(res.user.nativeCurrency || 'USD');
+          }
+        }).catch(console.error);
+      }
     }
 
     // 3. Fetch App Config & Notice
@@ -208,7 +212,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-white flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
+    <div className="min-h-screen bg-[#303845] text-white flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
       {/* Top Header */}
       <Header
         user={user}
@@ -277,6 +281,7 @@ export default function App() {
             onOpenChangePassword={() => setIsPasswordModalOpen(true)}
             onLogout={handleUserLogout}
             onOpenAuth={() => setIsAuthModalOpen(true)}
+            onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
           />
         )}
       </main>
@@ -367,6 +372,12 @@ export default function App() {
           userId={user.id}
         />
       )}
+
+      {/* Privacy Policy Modal */}
+      <PrivacyPolicyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
+      />
 
       {/* Client & Admin Unified Auth Modal */}
       <AuthModal

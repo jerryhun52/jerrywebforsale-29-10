@@ -30,42 +30,42 @@ interface CountryCurrencyOption {
 const COUNTRY_OPTIONS: CountryCurrencyOption[] = [
   {
     code: 'USD',
-    flagCode: 'US',
+    flagCode: '🇺🇸',
     country: 'United States & International',
     label: 'US Dollar (USD) ($)',
     symbol: '$'
   },
   {
     code: 'IN',
-    flagCode: 'IN',
+    flagCode: '🇮🇳',
     country: 'India',
     label: 'Indian Rupee (INR) (₹)',
     symbol: '₹'
   } as unknown as CountryCurrencyOption,
   {
     code: 'PK',
-    flagCode: 'PK',
+    flagCode: '🇵🇰',
     country: 'Pakistan',
     label: 'Pakistani Rupee (PKR) (₨)',
     symbol: '₨'
   } as unknown as CountryCurrencyOption,
   {
     code: 'BR',
-    flagCode: 'BR',
+    flagCode: '🇧🇷',
     country: 'Brazil',
     label: 'Brazilian Real (BRL) (R$)',
     symbol: 'R$'
   } as unknown as CountryCurrencyOption,
   {
     code: 'EG',
-    flagCode: 'EG',
+    flagCode: '🇪🇬',
     country: 'Egypt',
     label: 'Egyptian Pound (EGP) (E£)',
     symbol: 'E£'
   } as unknown as CountryCurrencyOption,
   {
     code: 'USDT',
-    flagCode: 'USDT',
+    flagCode: '🟢',
     country: 'Global Web3 & Crypto',
     label: 'Tether USD (USDT) (₮)',
     symbol: '₮'
@@ -131,6 +131,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [savedUsernames, setSavedUsernames] = useState<string[]>([]);
+
+  const loadSavedUsernames = () => {
+    try {
+      const raw = localStorage.getItem('flowcoin_saved_usernames');
+      if (raw) setSavedUsernames(JSON.parse(raw));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const saveSuggestedUsername = (uname: string) => {
+    try {
+      const raw = localStorage.getItem('flowcoin_saved_usernames');
+      let list: string[] = raw ? JSON.parse(raw) : [];
+      list = list.filter(u => u.toLowerCase() !== uname.toLowerCase());
+      list.unshift(uname);
+      if (list.length > 2) list = list.slice(0, 2);
+      localStorage.setItem('flowcoin_saved_usernames', JSON.stringify(list));
+      setSavedUsernames(list);
+    } catch (e) {
+      console.warn('Failed to save suggested username:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (isOpen) {
+      loadSavedUsernames();
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -181,6 +211,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClose();
             return;
           } else if (localCheck.user) {
+            saveSuggestedUsername(cleanUser);
             onLoginSuccess(localCheck.user);
             onClose();
             return;
@@ -254,6 +285,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             };
 
             localDb.addUser(userObj);
+            saveSuggestedUsername(cleanUser);
             onLoginSuccess(userObj);
             onClose();
             return;
@@ -268,6 +300,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             if (onAdminLoginSuccess) onAdminLoginSuccess(res.admin);
             onClose();
           } else if (res.user) {
+            saveSuggestedUsername(cleanUser);
             onLoginSuccess(res.user);
             onClose();
           }
@@ -285,6 +318,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         });
 
         if (res.success && res.user) {
+          saveSuggestedUsername(cleanUser);
           onLoginSuccess(res.user);
           onClose();
         } else {
@@ -428,7 +462,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={username}
                       onChange={(e) => setUsername(cleanMobileInput(e.target.value))}
                       placeholder="Enter username"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
                   </div>
@@ -446,7 +480,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       placeholder="Enter your full name"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none"
                       required
                     />
                   </div>
@@ -464,7 +498,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(cleanMobileInput(e.target.value))}
                       placeholder="Enter password (min 6 characters)"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
                     <button
@@ -489,7 +523,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(cleanMobileInput(e.target.value))}
                       placeholder="Confirm password"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
                     <button
@@ -547,7 +581,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={referralCode}
                       onChange={(e) => setReferralCode(cleanMobileInput(e.target.value).toUpperCase())}
                       placeholder="Enter your Referral code eg ROOT786"
-                      className="w-full bg-[#080d17] text-xs text-white placeholder:text-slate-500 font-mono rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none uppercase"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white placeholder:text-slate-500 font-mono rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none uppercase"
                       required
                     />
                   </div>
@@ -559,6 +593,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ) : (
               /* LOGIN FORM */
               <>
+                {savedUsernames.length > 0 && (
+                  <div className="mb-2">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                      Recent Accounts (1-Click Fill):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {savedUsernames.map(saved => (
+                        <button
+                          key={saved}
+                          type="button"
+                          onClick={() => setUsername(saved)}
+                          className="px-2.5 py-1 rounded-xl bg-[#080d17] hover:bg-cyan-950/80 border border-slate-700 hover:border-cyan-500/50 text-cyan-300 text-xs font-mono font-bold flex items-center space-x-1 transition-all"
+                        >
+                          <span>👤 @{saved}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="text-xs font-bold text-slate-300 block mb-1">
                     Username *
@@ -570,7 +624,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={username}
                       onChange={(e) => setUsername(cleanMobileInput(e.target.value))}
                       placeholder="Enter registered username"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
                   </div>
@@ -587,7 +641,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={password}
                       onChange={(e) => setPassword(cleanMobileInput(e.target.value))}
                       placeholder="Enter your password"
-                      className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
+                      className="w-full bg-[#080d17] text-[16px] sm:text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
                     <button

@@ -28,6 +28,7 @@ interface AssetsTabProps {
   onOpenChangePassword: () => void;
   onLogout: () => void;
   onOpenAuth: () => void;
+  onOpenPrivacy?: () => void;
 }
 
 export const AssetsTab: React.FC<AssetsTabProps> = ({
@@ -39,7 +40,8 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
   onOpenWithdraw,
   onOpenChangePassword,
   onLogout,
-  onOpenAuth
+  onOpenAuth,
+  onOpenPrivacy
 }) => {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -50,12 +52,11 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
   const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
   const rate = currentMeta.rate;
 
-  const formatPrice = (pUsd: number) => {
-    const val = pUsd * rate;
-    if (val >= 1000) {
-      return `${currentMeta.symbol}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatPrice = (amount: number) => {
+    if (amount >= 1000) {
+      return `${currentMeta.symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
-    return `${currentMeta.symbol}${val.toFixed(2)}`;
+    return `${currentMeta.symbol}${amount.toFixed(2)}`;
   };
 
   // Fetch user wallet history (deposits & withdrawals with rejection reasons)
@@ -94,7 +95,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 
   // Pre-filled Telegram Message Link
   const telegramMessage = encodeURIComponent(
-    `Hello COIN BASED Support Team,\n\nI need assistance with my account.\nUsername: ${user.username}\nUser ID: ${user.id}\nRegistered Code: ${user.referralCodeUsed || 'N/A'}\nAvailable Balance: $${user.balance.toFixed(2)} USD`
+    `Hello COIN BASED Support Team,\n\nI need assistance with my account.\nUsername: ${user.username}\nUser ID: ${user.id}\nRegistered Code: ${user.referralCodeUsed || 'N/A'}\nAvailable Balance: ${currentMeta.symbol}${user.balance.toFixed(2)} (${currentMeta.code})`
   );
   const telegramUrl = `${appConfig.telegramLink || 'https://t.me/flowcoin_support_desk'}?text=${telegramMessage}`;
 
@@ -137,9 +138,6 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           </div>
           <div className="text-3xl font-black font-mono-numbers tracking-tight">
             {formatPrice(user.balance)}
-          </div>
-          <div className="text-xs text-blue-100/70 font-mono">
-            (${user.balance.toFixed(2)} USD)
           </div>
         </div>
 
@@ -353,7 +351,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
         </button>
 
         <button
-          onClick={() => setShowPrivacy(true)}
+          onClick={() => onOpenPrivacy ? onOpenPrivacy() : setShowPrivacy(true)}
           className="flex items-center justify-center space-x-2 p-3 rounded-2xl bg-[#111827] hover:bg-[#1a2234] border border-slate-800 text-xs font-bold text-slate-300 transition-all"
         >
           <Shield className="w-4 h-4 text-emerald-400" />

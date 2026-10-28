@@ -40,6 +40,7 @@ import {
   AppConfig,
   TradeMode,
   UserStatus,
+  Currency,
   CURRENCIES
 } from '../types.ts';
 import { cleanMobileInput } from '../utils/sanitizer.ts';
@@ -107,6 +108,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
   const [newClientPassword, setNewClientPassword] = useState('123123');
   const [newClientBalance, setNewClientBalance] = useState('1000');
   const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientCurrency, setNewClientCurrency] = useState<Currency>('INR');
 
   // Create Sub-Admin Form (Screenshot 5)
   const [newSubUser, setNewSubUser] = useState('');
@@ -284,7 +286,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     }
   }, [currentAdmin?.id, adminTab]);
 
-  // Web Audio API Chime Synthesizer for Instant Real-time Registration Notification Sound
+  // Web Audio API Chime Synthesizer: Rich 1.5s Crystal Bell Notification Tone
   const playRegistrationChime = () => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -294,29 +296,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         ctx.resume();
       }
 
-      // First Tone: Crisp High Bell
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      gain1.gain.setValueAtTime(0.35, ctx.currentTime);
-      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(ctx.currentTime);
-      osc1.stop(ctx.currentTime + 0.35);
+      // 4-Note Melodic Crystal Bell (C5 -> E5 -> G5 -> C6) lasting ~1.5 seconds
+      const notes = [
+        { freq: 523.25, time: 0, duration: 0.45 },     // C5
+        { freq: 659.25, time: 0.18, duration: 0.55 },  // E5
+        { freq: 783.99, time: 0.36, duration: 0.65 },  // G5
+        { freq: 1046.50, time: 0.54, duration: 0.95 }  // C6 (High crystal bell)
+      ];
 
-      // Second Tone: Harmonic Ding
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
-      gain2.gain.setValueAtTime(0.35, ctx.currentTime + 0.12);
-      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(ctx.currentTime + 0.12);
-      osc2.stop(ctx.currentTime + 0.55);
+      notes.forEach(n => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(n.freq, ctx.currentTime + n.time);
+
+        gain.gain.setValueAtTime(0.001, ctx.currentTime + n.time);
+        gain.gain.linearRampToValueAtTime(0.28, ctx.currentTime + n.time + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + n.time + n.duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(ctx.currentTime + n.time);
+        osc.stop(ctx.currentTime + n.time + n.duration);
+      });
     } catch (e) {
       console.warn('Audio chime playback encountered an issue:', e);
     }
@@ -470,8 +473,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         username: newClientUsername,
         password: newClientPassword,
         email: newClientEmail || `${newClientUsername}@flowcoin.com`,
-        balance: parseFloat(newClientBalance) || 1000,
-        referralCode: currentAdmin.referralCode
+        balance: parseFloat(newClientBalance) || 0,
+        referralCode: currentAdmin.referralCode,
+        nativeCurrency: newClientCurrency
       });
 
       if (res.success) {
@@ -479,7 +483,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         setNewClientUsername('');
         setNewClientEmail('');
         fetchAllAdminData();
-        alert('New trader account added to portal!');
+        alert(`New trader account added to portal in ${newClientCurrency}!`);
       } else {
         alert(res.error || 'Failed to add client');
       }
@@ -494,11 +498,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     if (!manageUser) return;
     const num = parseFloat(balanceAmount);
     if (isNaN(num)) return;
+    const userMeta = CURRENCIES[manageUser.nativeCurrency || 'USD'] || CURRENCIES.USD;
     try {
       const res = await api.updateUserBalance(manageUser.id, balanceActionType, num);
       if (res.success) {
         const finalBal = res.user?.balance ?? res.balance ?? manageUser.balance;
-        alert(`Success! Balance for @${manageUser.username} successfully updated to $${Number(finalBal).toFixed(2)} USD`);
+        alert(`Success! Balance for @${manageUser.username} successfully updated to ${userMeta.symbol}${Number(finalBal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${userMeta.code}`);
         fetchAllAdminData();
       } else {
         alert(res.error || 'Failed to update balance');
@@ -614,17 +619,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     return pendingWithdrawals.reduce((acc, r) => acc + (r.amountUsd || 0), 0);
   }, [pendingWithdrawals]);
 
-  // Filtered Users
+  // Filtered Users (Sorted Newest Registrations at TOP)
   const filteredUsers = useMemo(() => {
-    if (!userSearch.trim()) return users;
-    const q = userSearch.toLowerCase();
-    return users.filter(
-      u =>
-        u.username.toLowerCase().includes(q) ||
-        (u.displayName && u.displayName.toLowerCase().includes(q)) ||
-        u.email.toLowerCase().includes(q) ||
-        u.id.toLowerCase().includes(q)
-    );
+    let result = [...users];
+    if (userSearch.trim()) {
+      const q = userSearch.toLowerCase();
+      result = result.filter(
+        u =>
+          u.username.toLowerCase().includes(q) ||
+          (u.displayName && u.displayName.toLowerCase().includes(q)) ||
+          u.email.toLowerCase().includes(q) ||
+          u.id.toLowerCase().includes(q)
+      );
+    }
+    return result.sort((a, b) => {
+      if (a.isNew && !b.isNew) return -1;
+      if (!a.isNew && b.isNew) return 1;
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
   }, [users, userSearch]);
 
   // Open Manage Drawer
@@ -1257,11 +1271,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                           <td className="py-3 px-3 font-black text-emerald-400 text-xs">
                             {(() => {
                               const meta = CURRENCIES[u.nativeCurrency || 'USD'] || CURRENCIES.USD;
-                              const nativeVal = u.balance * meta.rate;
                               return (
                                 <div>
-                                  <div>{meta.symbol}{nativeVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                  <div className="text-[10px] text-slate-400 font-normal font-sans">(${u.balance.toFixed(2)} USD)</div>
+                                  <div className="font-mono text-emerald-400 font-black">{meta.symbol}{(u.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  <div className="text-[10px] text-slate-400 font-bold font-sans">{meta.code}</div>
                                 </div>
                               );
                             })()}
@@ -1271,11 +1284,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                           <td className="py-3 px-3 font-bold text-amber-400 text-xs">
                             {(() => {
                               const meta = CURRENCIES[u.nativeCurrency || 'USD'] || CURRENCIES.USD;
-                              const nativeVal = u.freezeBalance * meta.rate;
                               return (
                                 <div>
-                                  <div>{meta.symbol}{nativeVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                  <div className="text-[10px] text-slate-400 font-normal font-sans">(${u.freezeBalance.toFixed(2)} USD)</div>
+                                  <div className="font-mono text-amber-400 font-bold">{meta.symbol}{(u.freezeBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  <div className="text-[10px] text-slate-400 font-bold font-sans">{meta.code}</div>
                                 </div>
                               );
                             })()}
@@ -1849,115 +1861,127 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/40 text-xs font-black">
-                  US USD ($)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setManageUser(null)}
-                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600 transition-all active:scale-90"
-                  title="Close Control Room (Esc)"
-                >
-                  <X className="w-5 h-5 stroke-[2.5]" />
-                </button>
-              </div>
+              {(() => {
+                const userMeta = CURRENCIES[manageUser.nativeCurrency || 'USD'] || CURRENCIES.USD;
+                return (
+                  <div className="flex items-center space-x-2">
+                    <span className="hidden sm:inline-block px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/40 text-xs font-black">
+                      {userMeta.flag} {userMeta.code} ({userMeta.symbol})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setManageUser(null)}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600 transition-all active:scale-90"
+                      title="Close Control Room (Esc)"
+                    >
+                      <X className="w-5 h-5 stroke-[2.5]" />
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Scrollable Modal Content */}
             <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
 
-            {/* Available & Frozen Balance Cards (Screenshot 2) */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3.5 rounded-2xl bg-[#080d17] border border-slate-800">
-                <div className="flex justify-between text-[11px] text-slate-400">
-                  <span>Available Balance</span>
-                  <span className="font-bold text-slate-300">USD</span>
-                </div>
-                <div className="text-2xl font-black text-emerald-400 font-mono mt-1">
-                  ${manageUser.balance.toFixed(2)}
-                </div>
-              </div>
+            {/* Available & Frozen Balance Cards */}
+            {(() => {
+              const userMeta = CURRENCIES[manageUser.nativeCurrency || 'USD'] || CURRENCIES.USD;
+              return (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3.5 rounded-2xl bg-[#080d17] border border-slate-800">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Available Balance</span>
+                        <span className="font-bold text-slate-300">{userMeta.code}</span>
+                      </div>
+                      <div className="text-2xl font-black text-emerald-400 font-mono mt-1">
+                        {userMeta.symbol}{(manageUser.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
 
-              <div className="p-3.5 rounded-2xl bg-[#080d17] border border-slate-800">
-                <div className="flex justify-between text-[11px] text-slate-400">
-                  <span>Frozen Balance</span>
-                  <span className="font-bold text-slate-300">USD</span>
-                </div>
-                <div className="text-2xl font-black text-amber-400 font-mono mt-1">
-                  ${manageUser.freezeBalance.toFixed(2)}
-                </div>
-              </div>
-            </div>
+                    <div className="p-3.5 rounded-2xl bg-[#080d17] border border-slate-800">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Frozen Balance</span>
+                        <span className="font-bold text-slate-300">{userMeta.code}</span>
+                      </div>
+                      <div className="text-2xl font-black text-amber-400 font-mono mt-1">
+                        {userMeta.symbol}{(manageUser.freezeBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
 
-            {/* Section 1: Add or Deduct Balance (USD) (Screenshot 2) */}
-            <div className="p-4 rounded-2xl bg-[#080d17] border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold text-emerald-400">
-                  💲 1. Add or Deduct Balance (USD):
-                </span>
-                <span className="text-[10px] text-amber-400 font-bold">Currency: USD</span>
-              </div>
+                  {/* Section 1: Add or Deduct Balance */}
+                  <div className="p-4 rounded-2xl bg-[#080d17] border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-emerald-400">
+                        💲 1. Add or Deduct Balance ({userMeta.code} - {userMeta.symbol}):
+                      </span>
+                      <span className="text-[10px] text-amber-400 font-bold">Currency: {userMeta.code} ({userMeta.symbol})</span>
+                    </div>
 
-              {/* Segmented Buttons */}
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBalanceActionType('add')}
-                  className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    balanceActionType === 'add'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow'
-                      : 'bg-[#0c1424] text-slate-300 border border-slate-700'
-                  }`}
-                >
-                  + Add USD
-                </button>
+                    {/* Segmented Buttons */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBalanceActionType('add')}
+                        className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
+                          balanceActionType === 'add'
+                            ? 'bg-amber-500 text-slate-950 font-black shadow'
+                            : 'bg-[#0c1424] text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        + Add {userMeta.code}
+                      </button>
 
-                <button
-                  type="button"
-                  onClick={() => setBalanceActionType('deduct')}
-                  className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    balanceActionType === 'deduct'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow'
-                      : 'bg-[#0c1424] text-slate-300 border border-slate-700'
-                  }`}
-                >
-                  - Deduct USD
-                </button>
+                      <button
+                        type="button"
+                        onClick={() => setBalanceActionType('deduct')}
+                        className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
+                          balanceActionType === 'deduct'
+                            ? 'bg-amber-500 text-slate-950 font-black shadow'
+                            : 'bg-[#0c1424] text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        - Deduct {userMeta.code}
+                      </button>
 
-                <button
-                  type="button"
-                  onClick={() => setBalanceActionType('set')}
-                  className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    balanceActionType === 'set'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow'
-                      : 'bg-[#0c1424] text-slate-300 border border-slate-700'
-                  }`}
-                >
-                  Set USD
-                </button>
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => setBalanceActionType('set')}
+                        className={`py-2 rounded-xl text-xs font-extrabold transition-all ${
+                          balanceActionType === 'set'
+                            ? 'bg-amber-500 text-slate-950 font-black shadow'
+                            : 'bg-[#0c1424] text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        Set {userMeta.code}
+                      </button>
+                    </div>
 
-              {/* Amount Input & Apply Button */}
-              <div className="flex items-center space-x-2">
-                <div className="relative flex-1">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
-                  <input
-                    type="number"
-                    value={balanceAmount}
-                    onChange={(e) => setBalanceAmount(e.target.value)}
-                    placeholder="Enter amount in USD (e.g. 500)"
-                    className="w-full bg-[#0c1424] text-xs font-bold text-white rounded-xl pl-8 pr-3 py-2.5 border border-slate-700 focus:outline-none focus:border-amber-400 font-mono"
-                  />
-                </div>
-                <button
-                  onClick={handleApplyBalance}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-black text-xs text-white shadow-md shadow-emerald-600/30 transition-all active:scale-95"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
+                    {/* Amount Input & Apply Button */}
+                    <div className="flex items-center space-x-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{userMeta.symbol}</span>
+                        <input
+                          type="number"
+                          value={balanceAmount}
+                          onChange={(e) => setBalanceAmount(e.target.value)}
+                          placeholder={`Enter amount in ${userMeta.code} (e.g. 500)`}
+                          className="w-full bg-[#0c1424] text-xs font-bold text-white rounded-xl pl-8 pr-3 py-2.5 border border-slate-700 focus:outline-none focus:border-amber-400 font-mono"
+                        />
+                      </div>
+                      <button
+                        onClick={handleApplyBalance}
+                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-black text-xs text-white shadow-md shadow-emerald-600/30 transition-all active:scale-95"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Section 2: Credit Score Adjustment (Screenshot 2) */}
             <div className="p-4 rounded-2xl bg-[#080d17] border border-slate-800 space-y-3">
@@ -2223,11 +2247,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-300">Initial Balance (USD)</label>
+                <label className="text-xs font-bold text-slate-300">Client Account Currency *</label>
+                <select
+                  value={newClientCurrency}
+                  onChange={(e) => setNewClientCurrency(e.target.value as Currency)}
+                  className="w-full bg-[#080d17] text-xs font-bold text-amber-300 rounded-xl px-3 py-2 border border-slate-700 mt-1 focus:outline-none focus:border-amber-400"
+                >
+                  <option value="INR">🇮🇳 INR - Indian Rupee (₹)</option>
+                  <option value="USD">🇺🇸 USD - US Dollar ($)</option>
+                  <option value="USDT">🟢 USDT - Tether (₮)</option>
+                  <option value="PKR">🇵🇰 PKR - Pakistani Rupee (₨)</option>
+                  <option value="BRL">🇧🇷 BRL - Brazilian Real (R$)</option>
+                  <option value="EGP">🇪🇬 EGP - Egyptian Pound (E£)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300">Initial Balance ({newClientCurrency})</label>
                 <input
                   type="number"
                   value={newClientBalance}
                   onChange={(e) => setNewClientBalance(e.target.value)}
+                  placeholder={`Enter initial amount in ${newClientCurrency}`}
                   className="w-full bg-[#080d17] text-xs text-emerald-400 font-mono font-bold rounded-xl px-3 py-2 border border-slate-700 mt-1"
                   required
                 />

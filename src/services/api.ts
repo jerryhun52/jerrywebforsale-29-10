@@ -8,7 +8,8 @@ import {
   CoinTicker,
   Candlestick,
   TradeMode,
-  UserStatus
+  UserStatus,
+  Currency
 } from '../types.ts';
 import { localDb } from './localDb.ts';
 import { supabase, isSupabaseConfigured } from './supabase.ts';
@@ -537,11 +538,13 @@ export const api = {
     email?: string;
     balance?: number;
     referralCode?: string;
+    nativeCurrency?: Currency;
   }): Promise<any> {
     const res = localDb.register({
       username: payload.username,
       password: payload.password || '123123',
-      referralCode: payload.referralCode || 'MASTER321'
+      referralCode: payload.referralCode || 'MASTER321',
+      nativeCurrency: payload.nativeCurrency || 'INR'
     });
     if (res.user && payload.balance !== undefined) {
       localDb.updateUserBalance(res.user.id, 'set', payload.balance);

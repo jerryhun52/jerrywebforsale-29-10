@@ -50,6 +50,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
   const [activeRunningTrade, setActiveRunningTrade] = useState<TradeOrder | null>(null);
   const [countdownRemaining, setCountdownRemaining] = useState<number>(0);
   const [tradeSettlementResult, setTradeSettlementResult] = useState<{ outcome: 'WIN' | 'LOSS'; payout: number } | null>(null);
+  const [tradeErrorModal, setTradeErrorModal] = useState<string | null>(null);
 
   const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
   const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
@@ -79,15 +80,24 @@ export const TradeTab: React.FC<TradeTabProps> = ({
     };
   }, [selectedSymbol, timeframe]);
 
-  // Quick amount chips in USD
-  const quickAmountsUsd = [10, 50, 100, 250, 500, 1000];
+  // Quick amount chips in native currency
+  const quickAmounts = (activeCurrencyCode === 'INR' || activeCurrencyCode === 'PKR')
+    ? [100, 500, 1000, 2500, 5000, 10000]
+    : [10, 50, 100, 250, 500, 1000];
 
-  const parsedAmountUsd = parseFloat(amountInput) || 0;
-  const availableBalanceUsd = user ? user.balance : 1000.0;
-  const expectedProfitUsd = +(parsedAmountUsd * (selectedDuration.yieldPercent / 100)).toFixed(2);
-  const totalPayoutUsd = +(parsedAmountUsd + expectedProfitUsd).toFixed(2);
+  const parsedAmount = parseFloat(amountInput) || 0;
+  const availableBalance = user ? user.balance : 1000.0;
+  const expectedProfit = +(parsedAmount * (selectedDuration.yieldPercent / 100)).toFixed(2);
+  const totalPayout = +(parsedAmount + expectedProfit).toFixed(2);
 
-  const formatPrice = (pUsd: number) => {
+  const formatNativeAmount = (amount: number) => {
+    if (amount >= 1000) {
+      return `${currentMeta.symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return `${currentMeta.symbol}${amount.toFixed(2)}`;
+  };
+
+  const formatCoinPrice = (pUsd: number) => {
     const val = pUsd * rate;
     if (val >= 1000) {
       return `${currentMeta.symbol}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -101,17 +111,17 @@ export const TradeTab: React.FC<TradeTabProps> = ({
   // Handle Trade Execution
   const handlePlaceTrade = async (direction: 'UP' | 'DOWN') => {
     if (!user) {
-      alert('Please log in to trade');
+      setTradeErrorModal('Please log in to trade');
       return;
     }
 
-    if (parsedAmountUsd <= 0) {
-      alert('Please enter a valid investment amount');
+    if (parsedAmount <= 0) {
+      setTradeErrorModal('Please enter a valid investment amount');
       return;
     }
 
-    if (parsedAmountUsd > user.balance) {
-      alert(`Insufficient balance! Your available balance is ${formatPrice(user.balance)} (${user.nativeCurrency}).`);
+    if (parsedAmount > user.balance) {
+      setTradeErrorModal(`Insufficient balance! Your available balance is ${formatNativeAmount(user.balance)}.`);
       return;
     }
 
@@ -123,7 +133,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
         direction,
         durationSeconds: selectedDuration.seconds,
         profitPercent: selectedDuration.yieldPercent,
-        marginUsd: parsedAmountUsd
+        marginUsd: parsedAmount
       });
 
       if (res.success && res.trade) {
@@ -131,10 +141,10 @@ export const TradeTab: React.FC<TradeTabProps> = ({
         onTradePlaced(res.trade);
         setPlacedTradePopup(res.trade);
       } else {
-        alert(res.error || 'Failed to place trade');
+        setTradeErrorModal(res.error || 'Insufficient balance');
       }
     } catch (err: any) {
-      alert(err.message || 'Error executing order');
+      setTradeErrorModal(err.message || 'Error executing order');
     } finally {
       setIsSubmitting(false);
     }
@@ -233,7 +243,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
             {/* Live Index Price */}
             <div className="flex items-baseline space-x-2">
               <span className="text-3xl font-black text-white font-mono-numbers tracking-tight">
-                {formatPrice(currentCoin.price)}
+                {formatCoinPrice(currentCoin.price)}
               </span>
               <span className="text-[11px] text-slate-400 font-medium">
                 Live Index Price
@@ -254,13 +264,13 @@ export const TradeTab: React.FC<TradeTabProps> = ({
             <div className="bg-[#111827] p-2.5 rounded-2xl border border-slate-800/80">
               <div className="text-[10px] text-slate-400">24h High:</div>
               <div className="text-xs font-bold text-white font-mono-numbers mt-0.5">
-                {formatPrice(currentCoin.high24h)}
+                {formatCoinPrice(currentCoin.high24h)}
               </div>
             </div>
             <div className="bg-[#111827] p-2.5 rounded-2xl border border-slate-800/80">
               <div className="text-[10px] text-slate-400">24h Low:</div>
               <div className="text-xs font-bold text-white font-mono-numbers mt-0.5">
-                {formatPrice(currentCoin.low24h)}
+                {formatCoinPrice(currentCoin.low24h)}
               </div>
             </div>
             <div className="bg-[#111827] p-2.5 rounded-2xl border border-slate-800/80">
@@ -282,7 +292,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 <span>Investment Amount ({currentMeta.code})</span>
               </div>
               <div className="text-slate-300 font-medium font-mono-numbers">
-                Available: <span className="font-extrabold text-white">{formatPrice(availableBalanceUsd)}</span>
+                Available: <span className="font-extrabold text-white">{formatNativeAmount(availableBalance)}</span>
               </div>
             </div>
 
@@ -299,31 +309,25 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 placeholder="50"
                 min="1"
               />
-              <span className="text-xs font-bold text-slate-400">
-                ≈ ${(parsedAmountUsd).toFixed(2)} USD
-              </span>
             </div>
 
             {/* Quick Chips */}
             <div className="flex flex-wrap gap-1.5">
-              {quickAmountsUsd.map(amtUsd => {
-                const nativeAmt = Math.round(amtUsd * rate);
-                return (
-                  <button
-                    key={amtUsd}
-                    onClick={() => setAmountInput(amtUsd.toString())}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
-                      amountInput === amtUsd.toString()
-                        ? 'bg-slate-900 text-white border-2 border-slate-600 shadow-sm'
-                        : 'bg-[#0f172a] text-slate-300 border border-slate-800 hover:border-slate-600'
-                    }`}
-                  >
-                    {currentMeta.symbol}{nativeAmt}
-                  </button>
-                );
-              })}
+              {quickAmounts.map(amt => (
+                <button
+                  key={amt}
+                  onClick={() => setAmountInput(amt.toString())}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                    amountInput === amt.toString()
+                      ? 'bg-slate-900 text-white border-2 border-slate-600 shadow-sm'
+                      : 'bg-[#0f172a] text-slate-300 border border-slate-800 hover:border-slate-600'
+                  }`}
+                >
+                  {currentMeta.symbol}{amt}
+                </button>
+              ))}
               <button
-                onClick={() => setAmountInput(Math.floor(availableBalanceUsd).toString())}
+                onClick={() => setAmountInput(Math.floor(availableBalance).toString())}
                 className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all"
               >
                 MAX ({currentMeta.code})
@@ -393,13 +397,13 @@ export const TradeTab: React.FC<TradeTabProps> = ({
               <div>
                 <div className="text-[11px] text-slate-400">Expected Profit Return:</div>
                 <div className="text-sm font-extrabold text-emerald-400 font-mono-numbers">
-                  +{formatPrice(expectedProfitUsd)} (+{selectedDuration.yieldPercent}%)
+                  +{formatNativeAmount(expectedProfit)} (+{selectedDuration.yieldPercent}%)
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-[11px] text-slate-400">Total Est. Payout:</div>
                 <div className="text-base font-black text-white font-mono-numbers">
-                  {formatPrice(totalPayoutUsd)}
+                  {formatNativeAmount(totalPayout)}
                 </div>
               </div>
             </div>
@@ -414,7 +418,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
               >
                 <div className="flex items-center space-x-1.5 text-base">
                   <ArrowUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-                  <span>BUY UP {formatPrice(parsedAmountUsd)}</span>
+                  <span>BUY UP {formatNativeAmount(parsedAmount)}</span>
                 </div>
                 <span className="text-[10px] font-bold text-emerald-100 opacity-90 mt-0.5">
                   +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
@@ -429,7 +433,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
               >
                 <div className="flex items-center space-x-1.5 text-base">
                   <ArrowDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-                  <span>BUY DOWN {formatPrice(parsedAmountUsd)}</span>
+                  <span>BUY DOWN {formatNativeAmount(parsedAmount)}</span>
                 </div>
                 <span className="text-[10px] font-bold text-rose-100 opacity-90 mt-0.5">
                   +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
@@ -439,6 +443,29 @@ export const TradeTab: React.FC<TradeTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ERROR MODAL FOR INSUFFICIENT BALANCE OR TRADING ERRORS (NO BROWSER ALERT) */}
+      {tradeErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-xs rounded-3xl bg-[#0c1322] border border-rose-500/50 p-6 shadow-2xl text-center space-y-4 animate-scaleUp">
+            <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 mx-auto flex items-center justify-center shadow-lg">
+              <XCircle className="w-8 h-8 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white">Notice</h3>
+              <p className="text-xs font-bold text-rose-300 leading-relaxed mt-1">
+                {tradeErrorModal}
+              </p>
+            </div>
+            <button
+              onClick={() => setTradeErrorModal(null)}
+              className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md transition-all active:scale-95"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* SUCCESS POPUP MODAL AFTER BUYING */}
       {placedTradePopup && (
@@ -478,7 +505,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
               <div className="flex justify-between">
                 <span className="text-slate-400">Invested Amount:</span>
                 <span className="font-extrabold text-amber-400">
-                  {formatPrice(placedTradePopup.marginUsd)} ({currentMeta.code})
+                  {formatNativeAmount(placedTradePopup.marginUsd)} ({currentMeta.code})
                 </span>
               </div>
 
@@ -543,7 +570,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Margin Escrow:</span>
-                    <span className="font-mono-numbers text-amber-400">{formatPrice(activeRunningTrade.marginUsd)}</span>
+                    <span className="font-mono-numbers text-amber-400">{formatNativeAmount(activeRunningTrade.marginUsd)}</span>
                   </div>
                 </div>
 
@@ -578,7 +605,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 <div className="bg-[#0b0f19] p-4 rounded-2xl border border-slate-800 text-center">
                   <div className="text-xs text-slate-400">Settlement Payout</div>
                   <div className={`text-2xl font-black font-mono-numbers mt-1 ${tradeSettlementResult.outcome === 'WIN' ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {formatPrice(tradeSettlementResult.payout)}
+                    {formatNativeAmount(tradeSettlementResult.payout)}
                   </div>
                 </div>
 
