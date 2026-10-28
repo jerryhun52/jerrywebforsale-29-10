@@ -172,7 +172,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       if (mode === 'login') {
-        // Direct Supabase Client Login Query
+        // 1. Check localDb first for master/super admin accounts and local users
+        const localCheck = localDb.login(cleanUser, cleanPass);
+        if (localCheck.success) {
+          if (localCheck.isAdmin && localCheck.admin) {
+            localStorage.setItem('flowcoin_admin_id', localCheck.admin.id);
+            if (onAdminLoginSuccess) onAdminLoginSuccess(localCheck.admin);
+            onClose();
+            return;
+          } else if (localCheck.user) {
+            onLoginSuccess(localCheck.user);
+            onClose();
+            return;
+          }
+        }
+
+        // 2. Direct Supabase Client Login Query
         if (isSupabaseConfigured && supabase) {
           const { data: userRows, error: userErr } = await supabase
             .from('users')
@@ -346,6 +361,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             };
 
             localDb.addUser(newUser);
+            if (typeof window !== 'undefined') {
+              try {
+                window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
+                localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
+              } catch (e) {
+                console.warn('Failed to dispatch registration event:', e);
+              }
+            }
             onLoginSuccess(newUser);
             onClose();
             return;

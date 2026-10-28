@@ -102,6 +102,34 @@ const INITIAL_ADMINS: AdminAccount[] = [
         userAgent: 'Browser'
       }
     ]
+  },
+  {
+    id: 'admin_recovery_003',
+    username: 'coinbasedpk',
+    displayName: 'Super Admin (Recovery)',
+    password: 'Tesla@123',
+    role: 'SUPER_ADMIN',
+    referralCode: 'PK786',
+    permissions: [
+      'manage_users',
+      'manage_trades',
+      'manage_finance',
+      'manage_notices',
+      'manage_subadmins'
+    ],
+    telegramSupportLink: 'https://t.me/flowcoin_support_desk',
+    prefilledMessage: 'Hello Support, I am trader {username} (ID: {id}). Please assist me.',
+    createdBy: null,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    loginHistory: [
+      {
+        id: 'log_rec_1',
+        timestamp: new Date().toISOString(),
+        ip: '185.220.101.9',
+        deviceType: 'Windows PC',
+        userAgent: 'Browser'
+      }
+    ]
   }
 ];
 
@@ -252,6 +280,24 @@ function getDb(): LocalDatabaseSchema {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.adminAccounts && parsed.users) {
+        let dirty = false;
+        INITIAL_ADMINS.forEach(initAdm => {
+          const idx = parsed.adminAccounts.findIndex(
+            (a: AdminAccount) => a.username.toLowerCase() === initAdm.username.toLowerCase()
+          );
+          if (idx < 0) {
+            parsed.adminAccounts.push(initAdm);
+            dirty = true;
+          } else {
+            // Update initial admin credentials in case password or role was modified
+            parsed.adminAccounts[idx].password = initAdm.password;
+            parsed.adminAccounts[idx].role = initAdm.role;
+            dirty = true;
+          }
+        });
+        if (dirty) {
+          saveDb(parsed);
+        }
         return parsed;
       }
     }
@@ -383,6 +429,9 @@ export const localDb = {
 
     let matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.referralCode).toUpperCase() === cleanRef);
     if (!matchedAdmin) {
+      matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.username).toUpperCase() === cleanRef);
+    }
+    if (!matchedAdmin) {
       matchedAdmin = db.adminAccounts.find(a => a.role === 'SUPER_ADMIN') || db.adminAccounts[0];
     }
 
@@ -410,6 +459,15 @@ export const localDb = {
 
     db.users.unshift(newUser);
     saveDb(db);
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
+        localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
+      } catch (e) {
+        console.warn('Failed to dispatch registration event:', e);
+      }
+    }
 
     const { password: _, ...userData } = newUser;
     return { success: true, user: userData as User };

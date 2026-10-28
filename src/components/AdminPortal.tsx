@@ -284,6 +284,91 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     }
   }, [currentAdmin?.id, adminTab]);
 
+  // Web Audio API Chime Synthesizer for Instant Real-time Registration Notification Sound
+  const playRegistrationChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      // First Tone: Crisp High Bell
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      gain1.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.35);
+
+      // Second Tone: Harmonic Ding
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain2.gain.setValueAtTime(0.35, ctx.currentTime + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.12);
+      osc2.stop(ctx.currentTime + 0.55);
+    } catch (e) {
+      console.warn('Audio chime playback encountered an issue:', e);
+    }
+  };
+
+  // Real-Time Registration Notification Sound & Instant User List Refresh Listener
+  useEffect(() => {
+    const handleNewUserRegistration = () => {
+      if (currentAdmin) {
+        fetchAllAdminData();
+        playRegistrationChime();
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === 'flowcoin_last_registered_time' ||
+        e.key === 'flowcoin_persistent_db_v2'
+      ) {
+        if (currentAdmin) {
+          fetchAllAdminData();
+          if (e.key === 'flowcoin_last_registered_time') {
+            playRegistrationChime();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('flowcoin_new_user_registered', handleNewUserRegistration);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('flowcoin_new_user_registered', handleNewUserRegistration);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [currentAdmin?.id]);
+
+  // Real-time polling for new client registration detection
+  useEffect(() => {
+    if (currentAdmin) {
+      const interval = setInterval(() => {
+        api.getAdminUsers(currentAdmin.id).then(latestUsers => {
+          if (latestUsers && latestUsers.length > users.length) {
+            setUsers(latestUsers);
+            playRegistrationChime();
+          }
+        }).catch(() => {});
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [currentAdmin?.id, users.length]);
+
   const handleAdminLogout = () => {
     setCurrentAdmin(null);
     localStorage.removeItem('flowcoin_admin_id');

@@ -148,7 +148,13 @@ export const api = {
     const cleanUser = username.trim();
     const cleanPass = password.trim();
 
-    // 1. Direct Supabase Client Query
+    // 1. Check localDb first for initial super admin accounts or local users
+    const localRes = localDb.login(cleanUser, cleanPass);
+    if (localRes.success) {
+      return localRes;
+    }
+
+    // 2. Direct Supabase Client Query
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: userRows, error } = await supabase
@@ -322,6 +328,14 @@ export const api = {
           };
 
           localDb.addUser(newUser);
+          if (typeof window !== 'undefined') {
+            try {
+              window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
+              localStorage.setItem('flowcoin_last_registered_time', Date.now().toString());
+            } catch (e) {
+              console.warn('Failed to dispatch registration event:', e);
+            }
+          }
           return { success: true, user: newUser };
         }
       } catch (err) {
