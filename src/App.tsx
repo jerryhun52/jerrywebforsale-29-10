@@ -65,6 +65,8 @@ export default function App() {
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+  const [initialReferralCode, setInitialReferralCode] = useState<string>('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // Notifications
@@ -79,16 +81,33 @@ export default function App() {
 
   // Initial Load: User & Market
   useEffect(() => {
-    // 1. Initial Login as Default Demo User (matching screenshots)
-    const savedUserId = localStorage.getItem('flowcoin_user_id') || 'usr_123123123123';
-    api.getUserProfile(savedUserId).then(res => {
-      if (res.success && res.user) {
-        setUser(res.user);
-        setCurrency(res.user.nativeCurrency || 'USD');
-      }
-    }).catch(console.error);
+    // 1. Check URL for referral parameter first
+    const href = window.location.href;
+    const refMatch = href.match(/[?#&](?:ref|referral|code)=([A-Za-z0-9_]+)/i);
+    let referralFromUrl = '';
+    if (refMatch && refMatch[1]) {
+      referralFromUrl = refMatch[1].toUpperCase();
+      setInitialReferralCode(referralFromUrl);
+      setAuthModalMode('register');
+      // Force logout active session when opening an agent/referral link
+      localStorage.removeItem('flowcoin_user_id');
+      setUser(null);
+      setIsAdminView(false);
+      setIsAuthModalOpen(true);
+    }
 
-    // 2. Fetch App Config & Notice
+    // 2. Initial Login as Default User if not landing on a referral link
+    if (!referralFromUrl) {
+      const savedUserId = localStorage.getItem('flowcoin_user_id') || 'usr_123123123123';
+      api.getUserProfile(savedUserId).then(res => {
+        if (res.success && res.user) {
+          setUser(res.user);
+          setCurrency(res.user.nativeCurrency || 'USD');
+        }
+      }).catch(console.error);
+    }
+
+    // 3. Fetch App Config & Notice
     api.getConfig().then(data => {
       if (data) {
         setAppConfig(data.config);
@@ -96,15 +115,9 @@ export default function App() {
       }
     }).catch(console.error);
 
-    // 3. Check URL hash for direct admin link or referral link
+    // 4. Check URL hash for direct admin link
     if (window.location.hash === '#admin') {
       setIsAdminView(true);
-    }
-
-    const href = window.location.href;
-    const refMatch = href.match(/[?#&]ref=([A-Za-z0-9_]+)/i);
-    if (refMatch && refMatch[1]) {
-      setIsAuthModalOpen(true);
     }
 
     const onHashChange = () => {
@@ -171,7 +184,7 @@ export default function App() {
   const handleUserLogout = () => {
     setUser(null);
     localStorage.removeItem('flowcoin_user_id');
-    setIsAuthModalOpen(true);
+    window.location.reload();
   };
 
   const handleLoginSuccess = (loggedInUser: User) => {
@@ -366,6 +379,8 @@ export default function App() {
           window.location.hash = '#admin';
         }}
         defaultCurrency={currency}
+        initialMode={authModalMode}
+        initialReferralCode={initialReferralCode}
       />
     </div>
   );

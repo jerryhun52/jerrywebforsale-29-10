@@ -88,6 +88,7 @@ interface AuthModalProps {
   onAdminLoginSuccess?: (admin: AdminAccount) => void;
   defaultCurrency: Currency;
   initialMode?: 'login' | 'register';
+  initialReferralCode?: string;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -96,7 +97,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   onAdminLoginSuccess,
   defaultCurrency = 'USD',
-  initialMode = 'login'
+  initialMode = 'login',
+  initialReferralCode = ''
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
 
@@ -105,8 +107,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [referralCode, setReferralCode] = useState('MASTER321');
+  const [referralCode, setReferralCode] = useState(initialReferralCode);
   const [selectedCurrency, setSelectedCurrency] = useState<Currency>(defaultCurrency);
+
+  React.useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
+
+  React.useEffect(() => {
+    if (initialReferralCode) {
+      setReferralCode(initialReferralCode.toUpperCase());
+    }
+  }, [initialReferralCode]);
 
   // Visibility Toggles
   const [showPassword, setShowPassword] = useState(false);
@@ -149,9 +163,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setError('Passwords do not match');
         return;
       }
+      // Default to ROOT786 if left blank
       if (!referralCode.trim()) {
-        setError('Referral / Agent Code is mandatory for registration');
-        return;
+        setReferralCode('ROOT786');
       }
     }
 
@@ -599,14 +613,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 {/* 6. Referral / Agent Code */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-300">
-                      Referral / Agent Code *
-                    </label>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold text-rose-300 bg-rose-950/80 border border-rose-500/50 uppercase">
-                      MANDATORY
-                    </span>
-                  </div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1">
+                    Referral / Agent Code *
+                  </label>
 
                   <div className="relative">
                     <Tag className="w-4 h-4 text-cyan-400/80 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -614,8 +623,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="text"
                       value={referralCode}
                       onChange={(e) => setReferralCode(cleanMobileInput(e.target.value).toUpperCase())}
-                      placeholder="Enter Agent / Referral Code (e.g. MASTER32)"
-                      className="w-full bg-[#080d17] text-xs text-amber-300 font-mono rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none uppercase font-bold"
+                      placeholder="Enter your Referral code eg ROOT786"
+                      className="w-full bg-[#080d17] text-xs text-white placeholder:text-slate-500 font-mono rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none uppercase"
                       required
                     />
                   </div>

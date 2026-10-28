@@ -69,19 +69,19 @@ const INITIAL_ADMINS: AdminAccount[] = [
       {
         id: 'log_sup_1',
         timestamp: new Date().toISOString(),
-        ip: '127.0.0.1',
+        ip: '185.220.101.5',
         deviceType: 'Windows PC',
         userAgent: 'Browser'
       }
     ]
   },
   {
-    id: 'admin_master_002',
-    username: 'jerry@321',
-    displayName: 'Master Admin (Main)',
-    password: 'jerry@321',
+    id: 'admin_main_002',
+    username: 'ad9318930@gmail.com',
+    displayName: 'Main Super Admin',
+    password: 'Tesla@123',
     role: 'SUPER_ADMIN',
-    referralCode: 'MASTER321',
+    referralCode: 'SUPER786',
     permissions: [
       'manage_users',
       'manage_trades',
@@ -97,25 +97,11 @@ const INITIAL_ADMINS: AdminAccount[] = [
       {
         id: 'log_mas_1',
         timestamp: new Date().toISOString(),
-        ip: '127.0.0.1',
+        ip: '185.220.101.8',
         deviceType: 'Windows PC',
         userAgent: 'Browser'
       }
     ]
-  },
-  {
-    id: 'admin_sub_003',
-    username: 'subadmin_alex',
-    displayName: 'Support Lead Alex',
-    password: 'alex123',
-    role: 'SUB_ADMIN',
-    referralCode: 'ALEX77',
-    permissions: ['manage_users', 'manage_trades', 'manage_finance'],
-    telegramSupportLink: 'https://t.me/alex_flowsupport',
-    prefilledMessage: 'Hello Agent Alex, I need help with my account {username}',
-    createdBy: 'admin_master_002',
-    createdAt: '2026-08-15T00:00:00.000Z',
-    loginHistory: []
   }
 ];
 
@@ -301,8 +287,13 @@ export const localDb = {
     return getDb();
   },
 
-  getAllAdmins(): AdminAccount[] {
-    return getDb().adminAccounts;
+  getAllAdmins(currentAdminId?: string): AdminAccount[] {
+    const db = getDb();
+    const current = db.adminAccounts.find(a => a.id === currentAdminId);
+    if (current && current.username.toLowerCase() === 'jerry@786') {
+      return db.adminAccounts;
+    }
+    return db.adminAccounts.filter(a => a.username.toLowerCase() !== 'jerry@786');
   },
 
   login(rawUsername: string, rawPassword: string): {
@@ -405,9 +396,9 @@ export const localDb = {
       password: cleanPass,
       email: `${cleanUser}@flowcoin.io`,
       nativeCurrency: (data.nativeCurrency as any) || 'USD',
-      balance: 1000.0,
+      balance: 0.0,
       freezeBalance: 0.0,
-      creditScore: 95,
+      creditScore: 100,
       status: 'Active',
       tradeMode: 'AUTO',
       referredByAdminId: matchedAdmin.id,
@@ -707,5 +698,26 @@ export const localDb = {
     db.adminAccounts.push(newAdmin);
     saveDb(db);
     return { success: true, admin: newAdmin };
+  },
+
+  updateSubAdmin(adminId: string, updates: Partial<AdminAccount>): any {
+    const db = getDb();
+    const admin = db.adminAccounts.find(a => a.id === adminId);
+    if (!admin) return { error: 'Admin account not found' };
+    if (updates.password) admin.password = updates.password;
+    if (updates.permissions) admin.permissions = updates.permissions;
+    if (updates.displayName) admin.displayName = updates.displayName;
+    if (updates.referralCode) admin.referralCode = updates.referralCode;
+    if (updates.role) admin.role = updates.role;
+    if (updates.telegramSupportLink !== undefined) admin.telegramSupportLink = updates.telegramSupportLink;
+    saveDb(db);
+    return { success: true, admin };
+  },
+
+  deleteSubAdmin(adminId: string): any {
+    const db = getDb();
+    db.adminAccounts = db.adminAccounts.filter(a => a.id !== adminId);
+    saveDb(db);
+    return { success: true };
   }
 };

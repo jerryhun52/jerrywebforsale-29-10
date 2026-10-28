@@ -282,7 +282,7 @@ export const api = {
             email: `${cleanUser}@flowcoin.io`,
             role: 'USER',
             native_currency: currency,
-            credit_score: 95,
+            credit_score: 100,
             status: 'Active',
             trade_mode: 'AUTO',
             referred_by_admin_id: referredByAdminId,
@@ -297,7 +297,7 @@ export const api = {
             .from('balances')
             .insert([{
               user_id: newUserId,
-              available_usd: 1000.0,
+              available_usd: 0.0,
               frozen_usd: 0.0,
               native_currency: currency,
               exchange_rate: 1.0
@@ -309,9 +309,9 @@ export const api = {
             displayName: cleanFullName,
             email: `${cleanUser}@flowcoin.io`,
             nativeCurrency: currency as any,
-            balance: 1000.0,
+            balance: 0.0,
             freezeBalance: 0.0,
-            creditScore: 95,
+            creditScore: 100,
             status: 'Active',
             tradeMode: 'AUTO',
             referredByAdminId,
@@ -508,8 +508,8 @@ export const api = {
   },
 
   // Sub-Admins Management
-  async getSubAdmins(_adminId: string): Promise<AdminAccount[]> {
-    return localDb.getAllAdmins();
+  async getSubAdmins(adminId?: string): Promise<AdminAccount[]> {
+    return localDb.getAllAdmins(adminId);
   },
 
   async createSubAdmin(payload: {
@@ -521,6 +521,14 @@ export const api = {
     displayName?: string;
   }): Promise<any> {
     return localDb.createSubAdmin(payload);
+  },
+
+  async updateSubAdmin(adminId: string, updates: Partial<AdminAccount>): Promise<any> {
+    return localDb.updateSubAdmin(adminId, updates);
+  },
+
+  async deleteSubAdmin(adminId: string): Promise<any> {
+    return localDb.deleteSubAdmin(adminId);
   },
 
   async customizeReferralCode(adminId: string, newReferralCode: string): Promise<any> {

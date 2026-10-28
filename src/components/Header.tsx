@@ -67,13 +67,13 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Icons matching screenshot */}
         <div className="flex items-center space-x-2">
-          {/* White Currency Pill Button */}
+          {/* White Currency Pill Button with Country Flag Logo */}
           <button
             onClick={handleCurrencyClick}
             className="flex items-center space-x-1.5 bg-white text-slate-900 px-3 py-1.5 rounded-full text-xs font-black shadow-sm hover:bg-slate-50 transition-all active:scale-95 border border-slate-200"
             title={user ? `Fixed Currency: ${currentMeta.code}` : "Change Currency"}
           >
-            <span className="text-xs font-extrabold text-slate-700">{currentMeta.code.slice(0, 2).toLowerCase()}</span>
+            <span className="text-sm leading-none">{currentMeta.flag || '🇺🇸'}</span>
             <span className="text-xs font-black text-slate-900">{currentMeta.code}</span>
           </button>
 
