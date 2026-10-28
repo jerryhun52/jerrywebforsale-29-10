@@ -400,7 +400,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <circle cx="12" cy="12" r="4" className="stroke-white" />
               </svg>
             </div>
-            <span className="text-xl font-black text-white tracking-wider">FLOW COIN</span>
+            <span className="text-xl font-black text-white tracking-wider">COIN BASED</span>
           </div>
           <span className="text-[10px] font-bold tracking-widest text-cyan-400 uppercase mt-0.5">
             Trade &bull; Invest &bull; Grow

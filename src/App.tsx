@@ -55,7 +55,7 @@ export default function App() {
   const [supportNotice, setSupportNotice] = useState<SupportNotice>({
     title: 'Official Support Notice',
     date: '9/4/2026',
-    content: 'Welcome to FLOW COIN Trading. Our real-time settlement and customer support desk is active 24/7.',
+    content: 'Welcome to COIN BASED Trading. Our real-time settlement and customer support desk is active 24/7.',
     isActive: true
   });
 
@@ -71,7 +71,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; time: string }>>([
     {
       id: 'notif_1',
-      title: 'Welcome to Flow Coin',
+      title: 'Welcome to COIN BASED',
       message: 'Your account is verified. 60s Option contracts with +20% return are ready to trade.',
       time: 'Just now'
     }

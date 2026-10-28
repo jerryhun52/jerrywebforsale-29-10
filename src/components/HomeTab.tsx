@@ -48,9 +48,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
   const handleDownloadApk = () => {
     const element = document.createElement('a');
-    const file = new Blob(['FLOW COIN Official Android App v2.4 (Simulated Package)'], { type: 'text/plain' });
+    const file = new Blob(['COIN BASED Official Android App v2.4 (Simulated Package)'], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
-    element.download = 'flowcoin-v2.4-official.apk';
+    element.download = 'coinbased-v2.4-official.apk';
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -90,7 +90,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               Professional crypto trading platform with advanced tools, secure wallet, fast withdrawals and real-time market data.
             </p>
 
-            {/* FLOW COIN Mobile App Card (Exact match to image_e3e35169.png) */}
+            {/* COIN BASED Mobile App Card (Exact match to image_e3e35169.png) */}
             <div className="rounded-2xl bg-[#0d182b]/90 p-4 sm:p-5 border border-cyan-500/25 shadow-xl space-y-3.5">
               <div className="flex items-start space-x-3.5">
                 <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-400 to-emerald-400 p-0.5 shadow-md shadow-cyan-500/20">
@@ -101,7 +101,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h3 className="text-sm sm:text-base font-extrabold text-white">
-                      FLOW COIN Mobile App
+                      COIN BASED Mobile App
                     </h3>
                     <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/40 uppercase">
                       V2.4 Official Android

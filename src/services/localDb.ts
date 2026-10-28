@@ -41,7 +41,7 @@ const DEFAULT_CONFIG: AppConfig = {
 const DEFAULT_NOTICE: SupportNotice = {
   title: 'Official Support Notice',
   date: '9/4/2026',
-  content: 'Welcome to FLOW COIN Trading. Our real-time settlement and customer support desk is active 24/7.',
+  content: 'Welcome to COIN BASED Trading. Our real-time settlement and customer support desk is active 24/7.',
   isActive: true
 };
 

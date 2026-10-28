@@ -505,7 +505,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
               <ShieldAlert className="w-9 h-9 text-slate-950 stroke-[2.5]" />
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white mt-1">
-              FLOW COIN Admin Portal
+              COIN BASED Admin Portal
             </h1>
             <p className="text-xs text-slate-400 max-w-xs">
               2-Tier Master Hierarchy & Scoped Sub-Admin Control System
@@ -593,7 +593,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
             onClick={onBackToClient}
             className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition-colors"
           >
-            &larr; Return to Flow Coin Trading Desk
+            &larr; Return to COIN BASED Trading Desk
           </button>
         </div>
       </div>
@@ -611,7 +611,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
       {/* Top Header matching Screenshot 1 */}
       <header className="w-full bg-[#09101d] border-b border-slate-800/80 px-4 py-2.5 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* FLOW COIN Logo */}
+          {/* COIN BASED Logo */}
           <div className="flex items-center space-x-2.5 cursor-pointer" onClick={onBackToClient}>
             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#0284c7] via-[#0369a1] to-[#0c4a6e] flex items-center justify-center p-1 border border-cyan-400/40 shadow-md">
               <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-cyan-300 stroke-current" strokeWidth="2.2">
@@ -623,7 +623,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
             </div>
             <div className="flex flex-col">
               <span className="text-base font-black tracking-wider text-white leading-none">
-                FLOW COIN
+                COIN BASED
               </span>
               <span className="text-[9px] font-bold tracking-widest text-cyan-400 uppercase mt-0.5">
                 Trade - Invest

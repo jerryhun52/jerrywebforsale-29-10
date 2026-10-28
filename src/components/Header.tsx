@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div className="flex flex-col">
             <span className="text-base font-extrabold tracking-wider text-white leading-none">
-              FLOW COIN
+              COIN BASED
             </span>
             <span className="text-[9px] font-bold tracking-widest text-cyan-400 leading-tight uppercase mt-0.5">
               Trade - Invest

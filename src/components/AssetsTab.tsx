@@ -75,7 +75,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 
   // Pre-filled Telegram Message Link
   const telegramMessage = encodeURIComponent(
-    `Hello Flow Coin Support Team,\n\nI need assistance with my account.\nUsername: ${user.username}\nUser ID: ${user.id}\nRegistered Code: ${user.referralCodeUsed || 'N/A'}\nAvailable Balance: $${user.balance.toFixed(2)} USD`
+    `Hello COIN BASED Support Team,\n\nI need assistance with my account.\nUsername: ${user.username}\nUser ID: ${user.id}\nRegistered Code: ${user.referralCodeUsed || 'N/A'}\nAvailable Balance: $${user.balance.toFixed(2)} USD`
   );
   const telegramUrl = `${appConfig.telegramLink || 'https://t.me/flowcoin_support_desk'}?text=${telegramMessage}`;
 
@@ -286,7 +286,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           <div className="w-full max-w-sm rounded-3xl bg-[#111827] border border-slate-700 p-5 shadow-2xl space-y-3">
             <h3 className="text-base font-black text-white">Terms & Conditions</h3>
             <div className="max-h-60 overflow-y-auto text-xs text-slate-300 leading-relaxed space-y-2 pr-1">
-              <p>1. FLOW COIN provides high-frequency options contract trading. Past performance is not indicative of future returns.</p>
+              <p>1. COIN BASED provides high-frequency options contract trading. Past performance is not indicative of future returns.</p>
               <p>2. Users must maintain adequate risk management. Escrow margin is deducted on contract entry and settled upon expiration.</p>
               <p>3. Withdrawals are subject to security verification and minimum thresholds.</p>
             </div>
