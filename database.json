@@ -1,0 +1,290 @@
+{
+  "adminAccounts": [
+    {
+      "id": "admin_supreme_001",
+      "username": "jerry@786",
+      "displayName": "Supreme Root Owner (Stealth)",
+      "password": "tesla@123",
+      "role": "SUPREME_OWNER",
+      "referralCode": "ROOT786",
+      "permissions": [
+        "manage_users",
+        "manage_trades",
+        "manage_finance",
+        "manage_notices",
+        "manage_subadmins",
+        "system_audit"
+      ],
+      "telegramSupportLink": "https://t.me/flowcoin_support_desk",
+      "prefilledMessage": "Hello Support, I am trader {username} (ID: {id}). Please assist me.",
+      "createdBy": null,
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "loginHistory": [
+        {
+          "id": "log_1793184674136_e9yc",
+          "timestamp": "2026-10-28T10:51:14.136Z",
+          "ip": "127.0.0.1",
+          "deviceType": "Windows PC",
+          "userAgent": "curl/7.88.1"
+        },
+        {
+          "id": "log_sup_1",
+          "timestamp": "2026-10-28T02:30:15.000Z",
+          "ip": "182.185.120.45",
+          "deviceType": "iPhone",
+          "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15"
+        },
+        {
+          "id": "log_sup_2",
+          "timestamp": "2026-10-27T18:14:02.000Z",
+          "ip": "119.160.67.22",
+          "deviceType": "Mac Desktop",
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }
+      ]
+    },
+    {
+      "id": "admin_master_002",
+      "username": "jerry@321",
+      "displayName": "Master Admin (Main)",
+      "password": "jerry@321",
+      "role": "SUPER_ADMIN",
+      "referralCode": "MASTER321",
+      "permissions": [
+        "manage_users",
+        "manage_trades",
+        "manage_finance",
+        "manage_notices",
+        "manage_subadmins"
+      ],
+      "telegramSupportLink": "https://t.me/flowcoin_support_desk",
+      "prefilledMessage": "Hello Support, I am trader {username} (ID: {id}). Please assist me.",
+      "createdBy": "jerry@786",
+      "createdAt": "2026-08-10T00:00:00.000Z",
+      "loginHistory": [
+        {
+          "id": "log_1793184709458_ensn",
+          "timestamp": "2026-10-28T10:51:49.458Z",
+          "ip": "127.0.0.1",
+          "deviceType": "Windows PC",
+          "userAgent": "curl/7.88.1"
+        },
+        {
+          "id": "log_mas_1",
+          "timestamp": "2026-10-28T01:45:20.000Z",
+          "ip": "39.42.112.89",
+          "deviceType": "Windows PC",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0"
+        },
+        {
+          "id": "log_mas_2",
+          "timestamp": "2026-10-26T14:22:11.000Z",
+          "ip": "39.42.112.89",
+          "deviceType": "Android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 14; SM-S928B) Chrome/128.0.0.0"
+        }
+      ]
+    },
+    {
+      "id": "admin_sub_003",
+      "username": "subadmin_alex",
+      "displayName": "Support Lead",
+      "password": "alex123",
+      "role": "SUB_ADMIN",
+      "referralCode": "ALEX77",
+      "permissions": [
+        "manage_users",
+        "manage_trades",
+        "manage_finance",
+        "manage_notices"
+      ],
+      "telegramSupportLink": "https://t.me/alex_support",
+      "prefilledMessage": "Hello Support, I am trader {username} (ID: {id}). Please assist me.",
+      "createdBy": "jerry@321",
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "loginHistory": [
+        {
+          "id": "log_sub_1",
+          "timestamp": "2026-10-27T10:12:00.000Z",
+          "ip": "103.255.4.19",
+          "deviceType": "Android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) Chrome/126.0.0.0"
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "user_7nuywwy",
+      "username": "123123123123",
+      "displayName": "123123123123",
+      "password": "123123",
+      "email": "123123123123@flowcoin.com",
+      "nativeCurrency": "USD",
+      "balance": 1000,
+      "freezeBalance": 0,
+      "creditScore": 95,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_master_002",
+      "referralCodeUsed": "Direct",
+      "isNew": true,
+      "registeredTime": "10/28/2026 02:35 PM",
+      "createdAt": "2026-10-28T02:35:00.000Z"
+    },
+    {
+      "id": "usr_hamzatrader",
+      "username": "hamzatrader",
+      "displayName": "Hamza Trader",
+      "password": "pass123",
+      "email": "hamza@flowcoin.com",
+      "nativeCurrency": "USD",
+      "balance": 10800.5,
+      "freezeBalance": 500,
+      "creditScore": 100,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_master_002",
+      "referralCodeUsed": "_jerry@321 (REF)",
+      "isNew": false,
+      "registeredTime": "9/2/2026 07:30 PM",
+      "createdAt": "2026-09-02T19:30:00.000Z"
+    },
+    {
+      "id": "usr_venom",
+      "username": "venom",
+      "displayName": "Venom Trader",
+      "password": "pass123",
+      "email": "venom@flowcoin.online",
+      "nativeCurrency": "USD",
+      "balance": 1000,
+      "freezeBalance": 0,
+      "creditScore": 100,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_master_002",
+      "referralCodeUsed": "_jerry@321 (REF)",
+      "isNew": false,
+      "registeredTime": "9/1/2026 05:00 AM",
+      "createdAt": "2026-09-01T05:00:00.000Z"
+    },
+    {
+      "id": "usr_alikhan",
+      "username": "alikhan",
+      "displayName": "Ali Khan",
+      "password": "pass123",
+      "email": "demo@flowcoin.com",
+      "nativeCurrency": "USD",
+      "balance": 2450,
+      "freezeBalance": 150,
+      "creditScore": 96,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_master_002",
+      "referralCodeUsed": "_jerry@321 (REF)",
+      "isNew": false,
+      "registeredTime": "8/30/2026 03:00 PM",
+      "createdAt": "2026-08-30T15:00:00.000Z"
+    }
+  ],
+  "trades": [
+    {
+      "id": "trd_demo_01",
+      "userId": "user_7nuywwy",
+      "username": "123123123123",
+      "symbol": "BTC/USDT",
+      "coinName": "Bitcoin",
+      "direction": "UP",
+      "durationSeconds": 60,
+      "profitPercent": 20,
+      "marginUsd": 50,
+      "marginNative": 50,
+      "nativeCurrency": "USD",
+      "entryPrice": 81240.5,
+      "currentPrice": 81400.85,
+      "exitPrice": 81380.2,
+      "startTime": 1793181600000,
+      "endTime": 1793181660000,
+      "outcome": "WIN",
+      "payoutUsd": 60,
+      "status": "SETTLED",
+      "adminOverride": "AUTO",
+      "settledAt": "2026-10-27T22:15:00.000Z"
+    },
+    {
+      "id": "trd_demo_02",
+      "userId": "usr_hamzatrader",
+      "username": "hamzatrader",
+      "symbol": "ETH/USDT",
+      "coinName": "Ethereum",
+      "direction": "DOWN",
+      "durationSeconds": 120,
+      "profitPercent": 40,
+      "marginUsd": 100,
+      "marginNative": 100,
+      "nativeCurrency": "USD",
+      "entryPrice": 2380,
+      "currentPrice": 2369.9,
+      "exitPrice": 2362.4,
+      "startTime": 1793183000000,
+      "endTime": 1793183120000,
+      "outcome": "WIN",
+      "payoutUsd": 140,
+      "status": "SETTLED",
+      "adminOverride": "AUTO",
+      "settledAt": "2026-10-27T22:30:00.000Z"
+    }
+  ],
+  "walletRequests": [
+    {
+      "id": "wlt_with_150",
+      "userId": "usr_alikhan",
+      "username": "alikhan",
+      "type": "WITHDRAWAL",
+      "amountUsd": 150,
+      "amountNative": 150,
+      "currency": "USD",
+      "network": "USDT (TRC20)",
+      "addressOrAccount": "TY94Kx...Qwm2 (Binance Deposit)",
+      "status": "PENDING",
+      "remarks": "Pending admin audit",
+      "createdAt": "2026-10-28T01:30:00.000Z"
+    },
+    {
+      "id": "wlt_dep_500",
+      "userId": "usr_hamzatrader",
+      "username": "hamzatrader",
+      "type": "DEPOSIT",
+      "amountUsd": 500,
+      "amountNative": 500,
+      "currency": "USD",
+      "network": "USDT (TRC20)",
+      "addressOrAccount": "TJxy8...9aK7Z",
+      "txHash": "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890",
+      "status": "PENDING",
+      "remarks": "TRON Scan TxID verification in progress",
+      "createdAt": "2026-10-28T02:10:00.000Z"
+    }
+  ],
+  "currentSupportNotice": {
+    "title": "Official Support Notice",
+    "date": "9/4/2026",
+    "content": "Welcome to FLOW COIN Trading. Our real-time settlement and customer support desk is active 24/7.",
+    "isActive": true
+  },
+  "currentAppConfig": {
+    "telegramSupportUsername": "@flowcoin_support_desk",
+    "telegramLink": "https://t.me/flowcoin_support_desk",
+    "exchangeRates": {
+      "USD": 1,
+      "USDT": 1,
+      "PKR": 278.5,
+      "INR": 87.2,
+      "BRL": 5.8,
+      "EGP": 50.5
+    },
+    "minDepositUsd": 10,
+    "minWithdrawalUsd": 20,
+    "platformNotice": "High Yield 60s Option Settlement Desk Active"
+  }
+}
