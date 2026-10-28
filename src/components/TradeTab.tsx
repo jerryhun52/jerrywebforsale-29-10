@@ -144,7 +144,8 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const timeLeft = Math.max(0, Math.ceil((activeRunningTrade.endTime - now) / 1000));
+      const safeEndTime = activeRunningTrade.endTime || (new Date(activeRunningTrade.createdAt || Date.now()).getTime() + (activeRunningTrade.durationSeconds || 60) * 1000);
+      const timeLeft = Math.max(0, Math.ceil((safeEndTime - now) / 1000));
       setCountdownRemaining(timeLeft);
 
       if (timeLeft <= 0) {

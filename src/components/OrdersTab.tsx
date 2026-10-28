@@ -167,7 +167,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
                   <div>
                     <span className="text-[10px] text-slate-400">{isSettled ? 'Settled Price:' : 'Current Price:'}</span>
                     <div className="font-extrabold text-white font-mono-numbers">
-                      {formatPrice(order.exitPrice || order.currentPrice)}
+                      {formatPrice(order.exitPrice || order.currentPrice || order.entryPrice)}
                     </div>
                   </div>
                   <div className="mt-1">

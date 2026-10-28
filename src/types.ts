@@ -72,23 +72,28 @@ export interface TradeOrder {
   userId: string;
   username: string;
   symbol: string;
-  coinName: string;
+  coinName?: string;
   direction: 'UP' | 'DOWN';
   durationSeconds: number; // 30, 60, 120, 180, 300
   profitPercent: number; // 20, 20, 40, 60, 80
   marginUsd: number;
-  marginNative: number;
-  nativeCurrency: Currency;
+  marginNative?: number;
+  nativeCurrency?: Currency;
   entryPrice: number;
-  currentPrice: number;
+  currentPrice?: number;
   exitPrice?: number;
-  startTime: number; // ms
-  endTime: number; // ms
+  finalPrice?: number;
+  targetPrice?: number;
+  startTime?: number; // ms
+  endTime?: number; // ms
   outcome: TradeOutcome;
   payoutUsd: number;
   status: 'RUNNING' | 'SETTLED';
-  adminOverride: TradeMode;
+  adminOverride?: TradeMode;
   settledAt?: string;
+  closedAt?: string;
+  createdAt?: string;
+  expiresAt?: string;
 }
 
 export interface WalletRequest {
