@@ -468,7 +468,7 @@ export const localDb = {
     else if (action === 'deduct') user.balance = Math.max(0, +(user.balance - amountUsd).toFixed(2));
     else if (action === 'set') user.balance = Math.max(0, +amountUsd.toFixed(2));
     saveDb(db);
-    return { success: true, user };
+    return { success: true, user, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
   updateCreditScore(userId: string, creditScore: number): any {

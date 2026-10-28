@@ -23,7 +23,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0f172a]/95 backdrop-blur-md border-t border-slate-800/90 py-1.5 px-3">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#d0d4db] border-t border-slate-300/90 py-1.5 px-3 shadow-lg">
       <div className="max-w-md mx-auto flex items-center justify-around">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -39,25 +39,25 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 <Icon
                   className={`w-5 h-5 transition-transform duration-200 ${
                     isActive
-                      ? 'text-blue-500 scale-110 stroke-[2.4]'
-                      : 'text-slate-400 group-hover:text-slate-200 stroke-[1.8]'
+                      ? 'text-[#2563eb] scale-110 stroke-[2.5]'
+                      : 'text-slate-700 group-hover:text-slate-900 stroke-[1.8]'
                   }`}
                 />
                 {tab.id === 'order' && runningOrderCount > 0 && (
-                  <span className="absolute -top-1 -right-2 flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] font-bold text-white bg-blue-600 rounded-full animate-pulse">
+                  <span className="absolute -top-1 -right-2 flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] font-black text-white bg-blue-600 rounded-full animate-pulse shadow">
                     {runningOrderCount}
                   </span>
                 )}
               </div>
               <span
-                className={`text-[11px] font-medium mt-1 tracking-tight transition-colors duration-200 ${
-                  isActive ? 'text-blue-500 font-semibold' : 'text-slate-400 group-hover:text-slate-200'
+                className={`text-[11px] font-bold mt-1 tracking-tight transition-colors duration-200 ${
+                  isActive ? 'text-[#2563eb] font-black' : 'text-slate-700 group-hover:text-slate-900'
                 }`}
               >
                 {tab.label}
               </span>
               {isActive && (
-                <div className="w-4 h-[2.5px] bg-blue-500 rounded-full mt-0.5 animate-fadeIn" />
+                <div className="w-4 h-[2.5px] bg-[#2563eb] rounded-full mt-0.5 animate-fadeIn" />
               )}
             </button>
           );

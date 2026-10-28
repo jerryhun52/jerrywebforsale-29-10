@@ -619,69 +619,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       required
                     />
                   </div>
-                  {/* Active Admin Referral Codes Chips (3 Total Admins) */}
-                  <div className="pt-1.5 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] text-slate-400">
-                      <span className="font-bold text-cyan-400">Total 3 Admin Referral Codes Available:</span>
-                      <span className="text-slate-500">Tap to apply</span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setReferralCode('ROOT786')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all ${
-                          referralCode === 'ROOT786'
-                            ? 'bg-cyan-950 text-cyan-300 border-cyan-400 font-black shadow'
-                            : 'bg-[#080d17] text-slate-400 border-slate-800 hover:border-slate-700'
-                        }`}
-                        title="Supreme Owner Referral"
-                      >
-                        <div className="font-extrabold">ROOT786</div>
-                        <div className="text-[9px] text-cyan-400 font-sans">Supreme Owner</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setReferralCode('MASTER321')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all ${
-                          referralCode === 'MASTER321'
-                            ? 'bg-cyan-950 text-cyan-300 border-cyan-400 font-black shadow'
-                            : 'bg-[#080d17] text-slate-400 border-slate-800 hover:border-slate-700'
-                        }`}
-                        title="Master Admin Referral"
-                      >
-                        <div className="font-extrabold">MASTER321</div>
-                        <div className="text-[9px] text-amber-400 font-sans">Master Admin</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setReferralCode('ALEX77')}
-                        className={`py-1.5 px-2 rounded-xl border text-center transition-all ${
-                          referralCode === 'ALEX77'
-                            ? 'bg-cyan-950 text-cyan-300 border-cyan-400 font-black shadow'
-                            : 'bg-[#080d17] text-slate-400 border-slate-800 hover:border-slate-700'
-                        }`}
-                        title="Sub-Admin Referral"
-                      >
-                        <div className="font-extrabold">ALEX77</div>
-                        <div className="text-[9px] text-emerald-400 font-sans">Agent Alex</div>
-                      </button>
-                    </div>
-                  </div>
-
                   <p className="text-[11px] text-slate-400 leading-relaxed mt-1">
                     Registration is by invitation only. Contact your agent or administrator for an invitation code.
                   </p>
                 </div>
               </>
             ) : (
-              /* LOGIN FORM (Accepts both client and admin accounts seamlessly) */
+              /* LOGIN FORM */
               <>
                 <div>
                   <label className="text-xs font-bold text-slate-300 block mb-1">
-                    Username / Client ID / Admin ID *
+                    Username *
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-cyan-400/80 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -689,7 +637,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(cleanMobileInput(e.target.value))}
-                      placeholder="e.g. 123123123123 or jerry@786"
+                      placeholder="Enter registered username"
                       className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-3.5 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
@@ -706,7 +654,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(cleanMobileInput(e.target.value))}
-                      placeholder="Enter password (e.g. tesla@123)"
+                      placeholder="Enter your password"
                       className="w-full bg-[#080d17] text-xs text-white rounded-2xl pl-10 pr-10 py-2.5 border border-slate-700/80 focus:border-cyan-400 focus:outline-none font-mono"
                       required
                     />
@@ -716,54 +664,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Instant Quick-Fill Accounts for Testing & Admin Access */}
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex items-center justify-between text-[10px] text-slate-400">
-                    <span className="font-bold text-slate-400">One-Tap Quick Login Options:</span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUsername('jerry@786');
-                        setPassword('tesla@123');
-                      }}
-                      className="p-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-mono text-center transition-all"
-                      title="Supreme Admin: jerry@786 / tesla@123"
-                    >
-                      <div className="font-bold truncate">@jerry@786</div>
-                      <div className="text-[9px] text-slate-400 font-sans">Supreme Admin</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUsername('jerry@321');
-                        setPassword('jerry@321');
-                      }}
-                      className="p-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 font-mono text-center transition-all"
-                      title="Master Admin: jerry@321 / jerry@321"
-                    >
-                      <div className="font-bold truncate">@jerry@321</div>
-                      <div className="text-[9px] text-slate-400 font-sans">Master Admin</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUsername('123123123123');
-                        setPassword('123123');
-                      }}
-                      className="p-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-mono text-center transition-all"
-                      title="Demo Trader: 123123123123 / 123123"
-                    >
-                      <div className="font-bold truncate">@123123123</div>
-                      <div className="text-[9px] text-slate-400 font-sans">Demo Trader</div>
                     </button>
                   </div>
                 </div>

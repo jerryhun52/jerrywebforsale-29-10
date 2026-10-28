@@ -39,7 +39,8 @@ import {
   SupportNotice,
   AppConfig,
   TradeMode,
-  UserStatus
+  UserStatus,
+  CURRENCIES
 } from '../types.ts';
 import { cleanMobileInput } from '../utils/sanitizer.ts';
 import { api } from '../services/api.ts';
@@ -355,8 +356,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     try {
       const res = await api.updateUserBalance(manageUser.id, balanceActionType, num);
       if (res.success) {
-        alert(`Balance successfully updated to $${res.balance.toFixed(2)} USD`);
+        const finalBal = res.user?.balance ?? res.balance ?? manageUser.balance;
+        alert(`Success! Balance for @${manageUser.username} successfully updated to $${Number(finalBal).toFixed(2)} USD`);
         fetchAllAdminData();
+      } else {
+        alert(res.error || 'Failed to update balance');
       }
     } catch (err: any) {
       alert(err.message || 'Balance update error');
@@ -1106,9 +1110,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
                           {/* Currency */}
                           <td className="py-3 px-3 font-sans">
-                            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                              US USD ($)
-                            </span>
+                            {(() => {
+                              const meta = CURRENCIES[u.nativeCurrency || 'USD'] || CURRENCIES.USD;
+                              return (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-bold inline-flex items-center space-x-1">
+                                  <span>{meta.flag}</span>
+                                  <span>{meta.code} ({meta.symbol})</span>
+                                </span>
+                              );
+                            })()}
                           </td>
 
                           {/* Registered Time */}
@@ -1118,12 +1128,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
                           {/* Available Balance */}
                           <td className="py-3 px-3 font-black text-emerald-400 text-xs">
-                            ${u.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {(() => {
+                              const meta = CURRENCIES[u.nativeCurrency || 'USD'] || CURRENCIES.USD;
+                              const nativeVal = u.balance * meta.rate;
+                              return (
+                                <div>
+                                  <div>{meta.symbol}{nativeVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  <div className="text-[10px] text-slate-400 font-normal font-sans">(${u.balance.toFixed(2)} USD)</div>
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           {/* Frozen Balance */}
                           <td className="py-3 px-3 font-bold text-amber-400 text-xs">
-                            ${u.freezeBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {(() => {
+                              const meta = CURRENCIES[u.nativeCurrency || 'USD'] || CURRENCIES.USD;
+                              const nativeVal = u.freezeBalance * meta.rate;
+                              return (
+                                <div>
+                                  <div>{meta.symbol}{nativeVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                  <div className="text-[10px] text-slate-400 font-normal font-sans">(${u.freezeBalance.toFixed(2)} USD)</div>
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           {/* Credit Score */}
@@ -1534,7 +1562,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                                 </button>
                                 <button
                                   onClick={async () => {
-                                    await api.handleWalletRequestAction(req.id, 'REJECT');
+                                    const reason = window.prompt("Enter rejection reason for this request:", "Identity / Audit verification pending") || "Rejected by Administrator";
+                                    await api.handleWalletRequestAction(req.id, 'REJECT', reason);
+                                    alert(`Withdrawal request rejected with reason: "${reason}"`);
                                     fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"

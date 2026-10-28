@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ArrowUp, ArrowDown, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { ChevronDown, ArrowUp, ArrowDown, Clock, CheckCircle2, XCircle, Check } from 'lucide-react';
 import { CoinTicker, Currency, CURRENCIES, User, Candlestick, TradeOrder } from '../types.ts';
 import { CandlestickChart } from './CandlestickChart.tsx';
 import { api } from '../services/api.ts';
@@ -44,11 +44,15 @@ export const TradeTab: React.FC<TradeTabProps> = ({
   const [amountInput, setAmountInput] = useState<string>('50');
   const [selectedDuration, setSelectedDuration] = useState<DurationOption>(DURATION_OPTIONS[1]); // 60s
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modals & Popups
+  const [placedTradePopup, setPlacedTradePopup] = useState<TradeOrder | null>(null);
   const [activeRunningTrade, setActiveRunningTrade] = useState<TradeOrder | null>(null);
   const [countdownRemaining, setCountdownRemaining] = useState<number>(0);
   const [tradeSettlementResult, setTradeSettlementResult] = useState<{ outcome: 'WIN' | 'LOSS'; payout: number } | null>(null);
 
-  const currentMeta = CURRENCIES[currency] || CURRENCIES.USD;
+  const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
+  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
   const rate = currentMeta.rate;
 
   const currentCoin = tickers.find(t => t.symbol === selectedSymbol) || tickers[0] || {
@@ -75,8 +79,8 @@ export const TradeTab: React.FC<TradeTabProps> = ({
     };
   }, [selectedSymbol, timeframe]);
 
-  // Quick amount chips in USD base
-  const quickAmounts = [10, 50, 100, 250, 500, 1000];
+  // Quick amount chips in USD
+  const quickAmountsUsd = [10, 50, 100, 250, 500, 1000];
 
   const parsedAmountUsd = parseFloat(amountInput) || 0;
   const availableBalanceUsd = user ? user.balance : 1000.0;
@@ -107,7 +111,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
     }
 
     if (parsedAmountUsd > user.balance) {
-      alert(`Insufficient balance! Your available balance is $${user.balance.toFixed(2)} USD.`);
+      alert(`Insufficient balance! Your available balance is ${formatPrice(user.balance)} (${user.nativeCurrency}).`);
       return;
     }
 
@@ -125,9 +129,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
       if (res.success && res.trade) {
         onRefreshUser();
         onTradePlaced(res.trade);
-        setActiveRunningTrade(res.trade);
-        setCountdownRemaining(selectedDuration.seconds);
-        setTradeSettlementResult(null);
+        setPlacedTradePopup(res.trade);
       } else {
         alert(res.error || 'Failed to place trade');
       }
@@ -150,7 +152,6 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
       if (timeLeft <= 0) {
         clearInterval(interval);
-        // Trigger settlement API
         api.settleTrade(activeRunningTrade.id).then(res => {
           if (res.success && res.trade) {
             setTradeSettlementResult({
@@ -168,7 +169,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
-      {/* Responsive Grid: 2 columns on PC/desktop, 1 column on mobile */}
+      {/* Responsive Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left Column: Chart & Market Data */}
         <div className="lg:col-span-7 xl:col-span-7 space-y-4">
@@ -273,173 +274,238 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
         {/* Right Column: Order Placement & Expiry Desk */}
         <div className="lg:col-span-5 xl:col-span-5 space-y-4">
-
-      {/* Investment Amount Desk (Screenshots 7 & 8) */}
-      <div className="rounded-3xl bg-[#111827] p-4 border border-slate-800 shadow-xl space-y-4">
-        {/* Available Header */}
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-1.5 font-bold text-emerald-400">
-            <span>$</span>
-            <span>Investment Amount (USD)</span>
-          </div>
-          <div className="text-slate-300 font-medium font-mono-numbers">
-            Available: <span className="font-extrabold text-white">{formatPrice(availableBalanceUsd)}</span>
-          </div>
-        </div>
-
-        {/* Input Box */}
-        <div className="relative flex items-center bg-[#0b0f19] rounded-2xl px-4 py-3 border border-slate-700/80 focus-within:border-cyan-400 transition-colors">
-          <span className="text-sm font-bold text-emerald-400 mr-2">
-            USD $
-          </span>
-          <input
-            type="number"
-            value={amountInput}
-            onChange={(e) => setAmountInput(e.target.value)}
-            className="flex-1 bg-transparent text-lg font-black text-white font-mono-numbers focus:outline-none"
-            placeholder="50"
-            min="1"
-          />
-          <span className="text-xs font-bold text-slate-400">
-            USD
-          </span>
-        </div>
-
-        {/* Quick Chips */}
-        <div className="flex flex-wrap gap-1.5">
-          {quickAmounts.map(amt => (
-            <button
-              key={amt}
-              onClick={() => setAmountInput(amt.toString())}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
-                amountInput === amt.toString()
-                  ? 'bg-slate-900 text-white border-2 border-slate-600 shadow-sm'
-                  : 'bg-[#0f172a] text-slate-300 border border-slate-800 hover:border-slate-600'
-              }`}
-            >
-              ${amt}
-            </button>
-          ))}
-          <button
-            onClick={() => setAmountInput(Math.floor(availableBalanceUsd).toString())}
-            className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all"
-          >
-            MAX (USD)
-          </button>
-        </div>
-
-        {/* Select Expiry Time & Profit Rate */}
-        <div className="space-y-2.5 pt-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-semibold">
-              <Clock className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Select Expiry Time & Profit Rate</span>
+          <div className="rounded-3xl bg-[#111827] p-4 border border-slate-800 shadow-xl space-y-4">
+            {/* Available Header */}
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-1.5 font-bold text-emerald-400">
+                <span>{currentMeta.symbol}</span>
+                <span>Investment Amount ({currentMeta.code})</span>
+              </div>
+              <div className="text-slate-300 font-medium font-mono-numbers">
+                Available: <span className="font-extrabold text-white">{formatPrice(availableBalanceUsd)}</span>
+              </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              Guaranteed Auto Profit Active
-            </span>
-          </div>
 
-          {/* Duration Cards Carousel */}
-          <div className="grid grid-cols-3 gap-2">
-            {DURATION_OPTIONS.slice(1, 4).map(opt => {
-              const isSelected = selectedDuration.seconds === opt.seconds;
-              return (
-                <div
-                  key={opt.seconds}
-                  onClick={() => setSelectedDuration(opt)}
-                  className={`p-3 rounded-2xl cursor-pointer transition-all border text-center flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-emerald-500/10 border-emerald-400 shadow-md shadow-emerald-500/10'
-                      : 'bg-[#0b0f19] border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                    {opt.tag} - {opt.yieldPercent}%
-                  </div>
-                  <div className="text-lg font-black text-white font-mono-numbers my-1">
-                    {opt.label}
-                  </div>
-                  <div className="text-xs font-bold text-emerald-400">
-                    +{opt.yieldPercent}% Profit
-                  </div>
+            {/* Input Box */}
+            <div className="relative flex items-center bg-[#0b0f19] rounded-2xl px-4 py-3 border border-slate-700/80 focus-within:border-cyan-400 transition-colors">
+              <span className="text-sm font-bold text-emerald-400 mr-2">
+                {currentMeta.code} {currentMeta.symbol}
+              </span>
+              <input
+                type="number"
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value)}
+                className="flex-1 bg-transparent text-lg font-black text-white font-mono-numbers focus:outline-none"
+                placeholder="50"
+                min="1"
+              />
+              <span className="text-xs font-bold text-slate-400">
+                ≈ ${(parsedAmountUsd).toFixed(2)} USD
+              </span>
+            </div>
+
+            {/* Quick Chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {quickAmountsUsd.map(amtUsd => {
+                const nativeAmt = Math.round(amtUsd * rate);
+                return (
+                  <button
+                    key={amtUsd}
+                    onClick={() => setAmountInput(amtUsd.toString())}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                      amountInput === amtUsd.toString()
+                        ? 'bg-slate-900 text-white border-2 border-slate-600 shadow-sm'
+                        : 'bg-[#0f172a] text-slate-300 border border-slate-800 hover:border-slate-600'
+                    }`}
+                  >
+                    {currentMeta.symbol}{nativeAmt}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setAmountInput(Math.floor(availableBalanceUsd).toString())}
+                className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all"
+              >
+                MAX ({currentMeta.code})
+              </button>
+            </div>
+
+            {/* Select Expiry Time & Profit Rate */}
+            <div className="space-y-2.5 pt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-semibold">
+                  <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Select Expiry Time & Profit Rate</span>
                 </div>
-              );
-            })}
-          </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  Guaranteed Auto Profit Active
+                </span>
+              </div>
 
-          {/* Quick toggle for 30s and 300s */}
-          <div className="flex items-center justify-center space-x-3 text-[11px] text-slate-400 pt-1">
-            <button
-              onClick={() => setSelectedDuration(DURATION_OPTIONS[0])}
-              className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 30 ? 'font-bold text-emerald-400 underline' : ''}`}
-            >
-              Turbo 30s (20%)
-            </button>
-            <span>•</span>
-            <button
-              onClick={() => setSelectedDuration(DURATION_OPTIONS[4])}
-              className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 300 ? 'font-bold text-emerald-400 underline' : ''}`}
-            >
-              Max Yield 300s (80%)
-            </button>
-          </div>
-        </div>
+              {/* Duration Cards */}
+              <div className="grid grid-cols-3 gap-2">
+                {DURATION_OPTIONS.slice(1, 4).map(opt => {
+                  const isSelected = selectedDuration.seconds === opt.seconds;
+                  return (
+                    <div
+                      key={opt.seconds}
+                      onClick={() => setSelectedDuration(opt)}
+                      className={`p-3 rounded-2xl cursor-pointer transition-all border text-center flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-emerald-500/10 border-emerald-400 shadow-md shadow-emerald-500/10'
+                          : 'bg-[#0b0f19] border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                        {opt.tag} - {opt.yieldPercent}%
+                      </div>
+                      <div className="text-lg font-black text-white font-mono-numbers my-1">
+                        {opt.label}
+                      </div>
+                      <div className="text-xs font-bold text-emerald-400">
+                        +{opt.yieldPercent}% Profit
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-        {/* Expected Return Preview */}
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0b0f19] border border-slate-800">
-          <div>
-            <div className="text-[11px] text-slate-400">Expected Profit Return:</div>
-            <div className="text-sm font-extrabold text-emerald-400 font-mono-numbers">
-              +${expectedProfitUsd.toFixed(2)} (+{selectedDuration.yieldPercent}%)
+              {/* Quick toggle for 30s and 300s */}
+              <div className="flex items-center justify-center space-x-3 text-[11px] text-slate-400 pt-1">
+                <button
+                  onClick={() => setSelectedDuration(DURATION_OPTIONS[0])}
+                  className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 30 ? 'font-bold text-emerald-400 underline' : ''}`}
+                >
+                  Turbo 30s (20%)
+                </button>
+                <span>•</span>
+                <button
+                  onClick={() => setSelectedDuration(DURATION_OPTIONS[4])}
+                  className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 300 ? 'font-bold text-emerald-400 underline' : ''}`}
+                >
+                  Max Yield 300s (80%)
+                </button>
+              </div>
+            </div>
+
+            {/* Expected Return Preview */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0b0f19] border border-slate-800">
+              <div>
+                <div className="text-[11px] text-slate-400">Expected Profit Return:</div>
+                <div className="text-sm font-extrabold text-emerald-400 font-mono-numbers">
+                  +{formatPrice(expectedProfitUsd)} (+{selectedDuration.yieldPercent}%)
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[11px] text-slate-400">Total Est. Payout:</div>
+                <div className="text-base font-black text-white font-mono-numbers">
+                  {formatPrice(totalPayoutUsd)}
+                </div>
+              </div>
+            </div>
+
+            {/* Big Action Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              {/* BUY UP */}
+              <button
+                onClick={() => handlePlaceTrade('UP')}
+                disabled={isSubmitting}
+                className="flex flex-col items-center justify-center py-4 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all text-white font-black shadow-lg shadow-emerald-700/30 group"
+              >
+                <div className="flex items-center space-x-1.5 text-base">
+                  <ArrowUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
+                  <span>BUY UP {formatPrice(parsedAmountUsd)}</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-100 opacity-90 mt-0.5">
+                  +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
+                </span>
+              </button>
+
+              {/* BUY DOWN */}
+              <button
+                onClick={() => handlePlaceTrade('DOWN')}
+                disabled={isSubmitting}
+                className="flex flex-col items-center justify-center py-4 px-3 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 transition-all text-white font-black shadow-lg shadow-rose-700/30 group"
+              >
+                <div className="flex items-center space-x-1.5 text-base">
+                  <ArrowDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
+                  <span>BUY DOWN {formatPrice(parsedAmountUsd)}</span>
+                </div>
+                <span className="text-[10px] font-bold text-rose-100 opacity-90 mt-0.5">
+                  +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
+                </span>
+              </button>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-[11px] text-slate-400">Total Est. Payout:</div>
-            <div className="text-base font-black text-white font-mono-numbers">
-              ${totalPayoutUsd.toFixed(2)}
-            </div>
-          </div>
-        </div>
-
-        {/* Big Action Buttons (Screenshot 8) */}
-        <div className="grid grid-cols-2 gap-3 pt-2">
-          {/* BUY UP */}
-          <button
-            onClick={() => handlePlaceTrade('UP')}
-            disabled={isSubmitting}
-            className="flex flex-col items-center justify-center py-4 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all text-white font-black shadow-lg shadow-emerald-700/30 group"
-          >
-            <div className="flex items-center space-x-1.5 text-base">
-              <ArrowUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
-              <span>BUY UP ${parsedAmountUsd}</span>
-            </div>
-            <span className="text-[10px] font-bold text-emerald-100 opacity-90 mt-0.5">
-              +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
-            </span>
-          </button>
-
-          {/* BUY DOWN */}
-          <button
-            onClick={() => handlePlaceTrade('DOWN')}
-            disabled={isSubmitting}
-            className="flex flex-col items-center justify-center py-4 px-3 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 transition-all text-white font-black shadow-lg shadow-rose-700/30 group"
-          >
-            <div className="flex items-center space-x-1.5 text-base">
-              <ArrowDown className="w-5 h-5 group-hover:translate-y-0.5 transition-transform" />
-              <span>BUY DOWN ${parsedAmountUsd}</span>
-            </div>
-            <span className="text-[10px] font-bold text-rose-100 opacity-90 mt-0.5">
-              +{selectedDuration.yieldPercent}% Profit in {selectedDuration.label}
-            </span>
-          </button>
         </div>
       </div>
-    </div>
-  </div>
+
+      {/* SUCCESS POPUP MODAL AFTER BUYING */}
+      {placedTradePopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-sm rounded-3xl bg-[#0c1322] border border-cyan-500/50 p-6 shadow-2xl text-center space-y-4 animate-scaleUp">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 mx-auto flex items-center justify-center shadow-lg">
+              <Check className="w-9 h-9 stroke-[3]" />
+            </div>
+
+            <div>
+              <h3 className="text-xl font-black text-white">Order Placed Successfully!</h3>
+              <p className="text-xs text-slate-300 mt-1">
+                Your option contract is now active in the market.
+              </p>
+            </div>
+
+            <div className="bg-[#080d17] p-4 rounded-2xl border border-slate-800 text-xs space-y-2 text-left font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Coin Purchased:</span>
+                <span className="font-extrabold text-white">{placedTradePopup.symbol}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-slate-400">Trade Direction:</span>
+                <span className={`font-black ${placedTradePopup.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {placedTradePopup.direction === 'UP' ? '🟢 BUY UP (GREEN)' : '🔴 BUY DOWN (RED)'}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-slate-400">Purchase Time:</span>
+                <span className="text-slate-200">
+                  {new Date().toLocaleTimeString()}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-slate-400">Invested Amount:</span>
+                <span className="font-extrabold text-amber-400">
+                  {formatPrice(placedTradePopup.marginUsd)} ({currentMeta.code})
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-slate-400">Duration Time:</span>
+                <span className="text-cyan-300 font-bold">
+                  {placedTradePopup.durationSeconds} Seconds ({placedTradePopup.profitPercent}% Return)
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setActiveRunningTrade(placedTradePopup);
+                setCountdownRemaining(placedTradePopup.durationSeconds);
+                setPlacedTradePopup(null);
+              }}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-600/30 transition-all active:scale-95"
+            >
+              Start Live Timer Execution
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Active Running Trade Modal */}
-      {activeRunningTrade && (
+      {activeRunningTrade && !placedTradePopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-sm rounded-3xl bg-[#111827] border border-slate-700 p-6 shadow-2xl text-center space-y-4 animate-scaleUp">
             {!tradeSettlementResult ? (
@@ -453,7 +519,6 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 </div>
 
                 <div className="relative flex items-center justify-center my-3">
-                  {/* Countdown Circle */}
                   <div className="w-28 h-28 rounded-full border-4 border-slate-800 flex items-center justify-center relative">
                     <span className="text-4xl font-black text-white font-mono-numbers">
                       {countdownRemaining}s
@@ -461,7 +526,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-[#0b0f19] p-3 rounded-2xl border border-slate-800 text-xs space-y-1.5">
+                <div className="bg-[#0b0f19] p-3 rounded-2xl border border-slate-800 text-xs space-y-1.5 font-mono">
                   <div className="flex justify-between">
                     <span className="text-slate-400">Asset:</span>
                     <span className="font-extrabold text-white">{activeRunningTrade.symbol}</span>
@@ -478,7 +543,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Margin Escrow:</span>
-                    <span className="font-mono-numbers text-amber-400">${activeRunningTrade.marginUsd} USD</span>
+                    <span className="font-mono-numbers text-amber-400">{formatPrice(activeRunningTrade.marginUsd)}</span>
                   </div>
                 </div>
 
@@ -513,7 +578,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 <div className="bg-[#0b0f19] p-4 rounded-2xl border border-slate-800 text-center">
                   <div className="text-xs text-slate-400">Settlement Payout</div>
                   <div className={`text-2xl font-black font-mono-numbers mt-1 ${tradeSettlementResult.outcome === 'WIN' ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    ${tradeSettlementResult.payout.toFixed(2)} USD
+                    {formatPrice(tradeSettlementResult.payout)}
                   </div>
                 </div>
 

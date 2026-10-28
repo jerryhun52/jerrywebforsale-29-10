@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Clock,
@@ -10,9 +10,13 @@ import {
   LogOut,
   ChevronRight,
   Send,
-  BellRing
+  BellRing,
+  AlertTriangle,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
-import { User, Currency, CURRENCIES, SupportNotice, AppConfig } from '../types.ts';
+import { User, Currency, CURRENCIES, SupportNotice, AppConfig, WalletRequest } from '../types.ts';
+import { api } from '../services/api.ts';
 
 interface AssetsTabProps {
   user: User | null;
@@ -39,8 +43,11 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 }) => {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [userRequests, setUserRequests] = useState<WalletRequest[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
 
-  const currentMeta = CURRENCIES[currency] || CURRENCIES.USD;
+  const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
+  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
   const rate = currentMeta.rate;
 
   const formatPrice = (pUsd: number) => {
@@ -51,6 +58,18 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
     return `${currentMeta.symbol}${val.toFixed(2)}`;
   };
 
+  // Fetch user wallet history (deposits & withdrawals with rejection reasons)
+  useEffect(() => {
+    if (!user) return;
+    setIsLoadingRequests(true);
+    api.getWalletRequests(user.id)
+      .then(reqs => {
+        if (reqs) setUserRequests(reqs);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingRequests(false));
+  }, [user?.id]);
+
   if (!user) {
     return (
       <div className="space-y-4 pb-20 animate-fadeIn text-center p-8">
@@ -58,9 +77,9 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           <div className="w-16 h-16 rounded-full bg-cyan-500/20 text-cyan-400 mx-auto flex items-center justify-center">
             <ShieldCheck className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-black text-white">Client Portal</h2>
+          <h2 className="text-xl font-black text-white">Account Profile & Balance</h2>
           <p className="text-xs text-slate-400">
-            Log in to manage your digital assets, deposit and withdrawal records, and security settings.
+            Please sign in to view your credit score points, assets, and trade history.
           </p>
           <button
             onClick={onOpenAuth}
@@ -81,7 +100,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
-      {/* Blue Gradient Profile Card (Screenshots 10 & 11) */}
+      {/* Blue Gradient Profile Card */}
       <div className="rounded-3xl bg-gradient-to-br from-[#2563eb] via-[#1d4ed8] to-[#1e40af] p-5 shadow-2xl text-white relative overflow-hidden">
         {/* Glow backdrop overlay */}
         <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
@@ -100,20 +119,27 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
                   <span>Verified Trader</span>
                 </span>
               </div>
-              <div className="text-xs text-blue-100/80 mt-0.5">
-                • {user.email}
+              <div className="text-xs text-blue-100/80 mt-0.5 font-mono">
+                {user.email}
               </div>
             </div>
+          </div>
+
+          <div className="px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-[11px] font-black">
+            {currentMeta.flag} {currentMeta.code}
           </div>
         </div>
 
         {/* Available Balance */}
         <div className="space-y-1 mb-4">
           <div className="text-xs font-semibold text-blue-100/90">
-            Available Balance
+            Available Balance ({currentMeta.code})
           </div>
           <div className="text-3xl font-black font-mono-numbers tracking-tight">
             {formatPrice(user.balance)}
+          </div>
+          <div className="text-xs text-blue-100/70 font-mono">
+            (${user.balance.toFixed(2)} USD)
           </div>
         </div>
 
@@ -139,15 +165,6 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
         </div>
       </div>
 
-      {/* Ticker Strip */}
-      <div className="rounded-2xl bg-[#111827] py-2.5 px-4 border border-slate-800 text-xs font-mono-numbers flex items-center justify-between overflow-x-auto whitespace-nowrap space-x-4">
-        <span className="text-white font-bold">$107,250 <span className="text-emerald-400">+2.4%</span></span>
-        <span className="text-slate-500">|</span>
-        <span className="text-white font-bold">ETH $6,850 <span className="text-emerald-400">+1.8%</span></span>
-        <span className="text-slate-500">|</span>
-        <span className="text-white font-bold">BNB $1,245 <span className="text-emerald-400">+3.1%</span></span>
-      </div>
-
       {/* Action Buttons: Deposit & Withdraw */}
       <div className="grid grid-cols-2 gap-3">
         {/* Deposit */}
@@ -167,7 +184,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
         </div>
 
-        {/* Withdraw (Screenshot 10) */}
+        {/* Withdraw */}
         <div
           onClick={onOpenWithdraw}
           className="flex items-center justify-between p-4 rounded-3xl bg-[#111827] hover:bg-[#1a2234] border border-slate-800 transition-all cursor-pointer group shadow-lg"
@@ -185,7 +202,91 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
         </div>
       </div>
 
-      {/* Support Team Notice (OFFICIAL Card - Screenshot 11) */}
+      {/* WITHDRAWAL & DEPOSIT HISTORY SECTION (SHOWS REJECTION REASONS CLEARLY) */}
+      <div className="rounded-3xl bg-[#111827] p-4 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-sm font-black text-white">Deposit & Withdrawal History</h3>
+          </div>
+          <span className="text-[10px] font-bold text-slate-400 font-mono">
+            {userRequests.length} Records
+          </span>
+        </div>
+
+        {userRequests.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-[#0b0f19] border border-slate-800/80 text-center text-xs text-slate-400">
+            No withdrawal or deposit requests recorded yet.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {userRequests.map(req => {
+              const isWithdraw = req.type === 'WITHDRAWAL';
+              const isRejected = req.status === 'REJECTED';
+              const isApproved = req.status === 'APPROVED';
+
+              return (
+                <div
+                  key={req.id}
+                  className={`p-3.5 rounded-2xl bg-[#0b0f19] border transition-all space-y-2 ${
+                    isRejected
+                      ? 'border-rose-500/40 bg-rose-950/20'
+                      : isApproved
+                      ? 'border-emerald-500/30'
+                      : 'border-amber-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className={`p-1.5 rounded-xl ${isWithdraw ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                        {isWithdraw ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-white">
+                          {req.type} ({req.network})
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {req.createdAt ? new Date(req.createdAt).toLocaleString() : 'Recent'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right font-mono">
+                      <div className="text-xs font-black text-white">
+                        {formatPrice(req.amountUsd)}
+                      </div>
+                      <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[9px] font-black ${
+                        isApproved
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : isRejected
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      }`}>
+                        {isApproved && <CheckCircle className="w-2.5 h-2.5" />}
+                        {isRejected && <XCircle className="w-2.5 h-2.5" />}
+                        <span>{req.status}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* PROMINENT REJECTION REASON DISPLAY */}
+                  {isRejected && (
+                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-start space-x-2">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400 mt-0.5" />
+                      <div>
+                        <span className="font-extrabold text-white block">Withdrawal Rejected Reason:</span>
+                        <span className="font-mono text-rose-200">{req.remarks || 'Rejected by finance audit. Please contact support.'}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Support Team Notice (OFFICIAL Card) */}
       <div className="rounded-3xl bg-blue-600 p-4 shadow-xl space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2 text-white font-extrabold text-sm">

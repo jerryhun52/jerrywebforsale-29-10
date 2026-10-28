@@ -96,9 +96,15 @@ export default function App() {
       }
     }).catch(console.error);
 
-    // 3. Check URL hash for direct admin link
+    // 3. Check URL hash for direct admin link or referral link
     if (window.location.hash === '#admin') {
       setIsAdminView(true);
+    }
+
+    const href = window.location.href;
+    const refMatch = href.match(/[?#&]ref=([A-Za-z0-9_]+)/i);
+    if (refMatch && refMatch[1]) {
+      setIsAuthModalOpen(true);
     }
 
     const onHashChange = () => {
@@ -197,6 +203,7 @@ export default function App() {
         onOpenCurrency={() => setIsCurrencyModalOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenAssets={() => setCurrentTab('assets')}
         onToggleAdmin={() => {
           setIsAdminView(true);
           window.location.hash = 'admin';
