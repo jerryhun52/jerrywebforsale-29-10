@@ -81,37 +81,56 @@ export default function App() {
     }
   ]);
 
-  // Initial Load: User & Market
+  // Helper to switch tab and update browser URL hash cleanly
+  const navigateTab = (tab: NavigationTab) => {
+    setCurrentTab(tab);
+    if (!isAdminView && window.location.hash !== '#admin') {
+      window.history.replaceState(null, '', `${window.location.pathname}#${tab}`);
+    }
+  };
+
+  // Initial Load: User, Market & URL Navigation
   useEffect(() => {
-    // 1. Check URL for referral parameter first
+    // 1. Sync active tab from URL hash if present
+    const rawHash = (window.location.hash || '').replace('#', '').toLowerCase();
+    if (['home', 'market', 'trade', 'order', 'assets'].includes(rawHash)) {
+      setCurrentTab(rawHash as NavigationTab);
+    } else if (!window.location.hash || window.location.hash === '') {
+      window.history.replaceState(null, '', `${window.location.pathname}#home`);
+    }
+
+    // 2. Check URL for referral parameter and clean URL so refresh keeps user logged in
     const href = window.location.href;
     const refMatch = href.match(/[?#&](?:ref|referral|code)=([A-Za-z0-9_]+)/i);
     let referralFromUrl = '';
     if (refMatch && refMatch[1]) {
       referralFromUrl = refMatch[1].toUpperCase();
       setInitialReferralCode(referralFromUrl);
-      setAuthModalMode('register');
-      // Force logout active session when opening an agent/referral link
-      localStorage.removeItem('flowcoin_user_id');
-      setUser(null);
-      setIsAdminView(false);
-      setIsAuthModalOpen(true);
-    }
+      
+      // Clean query parameter from URL immediately
+      const targetHash = window.location.hash || '#home';
+      window.history.replaceState({}, document.title, window.location.pathname + targetHash);
 
-    // 2. Initial Login Rehydration on Page Refresh
-    if (!referralFromUrl) {
       const savedUserId = localStorage.getItem('flowcoin_user_id');
-      if (savedUserId) {
-        api.getUserProfile(savedUserId).then(res => {
-          if (res.success && res.user) {
-            setUser(res.user);
-            setCurrency(res.user.nativeCurrency || 'USD');
-          }
-        }).catch(console.error);
+      if (!savedUserId) {
+        setAuthModalMode('register');
+        setIsAdminView(false);
+        setIsAuthModalOpen(true);
       }
     }
 
-    // 3. Fetch App Config & Notice
+    // 3. Initial Login Rehydration on Page Refresh
+    const savedUserId = localStorage.getItem('flowcoin_user_id');
+    if (savedUserId) {
+      api.getUserProfile(savedUserId).then(res => {
+        if (res.success && res.user) {
+          setUser(res.user);
+          setCurrency(res.user.nativeCurrency || 'USD');
+        }
+      }).catch(console.error);
+    }
+
+    // 4. Fetch App Config & Notice
     api.getConfig().then(data => {
       if (data) {
         setAppConfig(data.config);
@@ -119,13 +138,21 @@ export default function App() {
       }
     }).catch(console.error);
 
-    // 4. Check URL hash for direct admin link
+    // 5. Check URL hash for direct admin link
     if (window.location.hash === '#admin') {
       setIsAdminView(true);
     }
 
     const onHashChange = () => {
-      setIsAdminView(window.location.hash === '#admin');
+      if (window.location.hash === '#admin') {
+        setIsAdminView(true);
+      } else {
+        setIsAdminView(false);
+        const h = window.location.hash.replace('#', '').toLowerCase();
+        if (['home', 'market', 'trade', 'order', 'assets'].includes(h)) {
+          setCurrentTab(h as NavigationTab);
+        }
+      }
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -190,7 +217,7 @@ export default function App() {
 
   const handleSelectCoin = (symbol: string) => {
     setSelectedSymbol(symbol);
-    setCurrentTab('trade');
+    navigateTab('trade');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -213,15 +240,43 @@ export default function App() {
   };
 
   const handleUserLogout = () => {
+    if (user) {
+      try {
+        const raw = localStorage.getItem('flowcoin_saved_accounts');
+        let list = raw ? JSON.parse(raw) : [];
+        list = list.filter((a: any) => a.username.toLowerCase() !== user.username.toLowerCase());
+        list.unshift({
+          username: user.username,
+          password: user.password || '123123',
+          displayName: user.displayName || user.username
+        });
+        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 4)));
+      } catch {}
+    }
     setUser(null);
     localStorage.removeItem('flowcoin_user_id');
-    window.location.reload();
+    setAuthModalMode('login');
+    setIsAuthModalOpen(true);
   };
 
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
     setCurrency(loggedInUser.nativeCurrency || 'USD');
     localStorage.setItem('flowcoin_user_id', loggedInUser.id);
+    if (loggedInUser.password) {
+      try {
+        const raw = localStorage.getItem('flowcoin_saved_accounts');
+        let list = raw ? JSON.parse(raw) : [];
+        list = list.filter((a: any) => a.username.toLowerCase() !== loggedInUser.username.toLowerCase());
+        list.unshift({
+          username: loggedInUser.username,
+          password: loggedInUser.password,
+          displayName: loggedInUser.displayName || loggedInUser.username
+        });
+        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 4)));
+      } catch {}
+    }
+    navigateTab('home');
   };
 
   const runningTradesCount = unviewedTradeIds.length > 0
@@ -234,7 +289,7 @@ export default function App() {
       <AdminPortal
         onBackToClient={() => {
           setIsAdminView(false);
-          window.location.hash = '';
+          window.location.hash = '#home';
         }}
       />
     );
@@ -248,8 +303,11 @@ export default function App() {
         currency={currency}
         onOpenCurrency={() => setIsCurrencyModalOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenAssets={() => setCurrentTab('assets')}
+        onOpenAuth={() => {
+          setAuthModalMode('login');
+          setIsAuthModalOpen(true);
+        }}
+        onOpenAssets={() => navigateTab('assets')}
         onToggleAdmin={() => {
           setIsAdminView(true);
           window.location.hash = 'admin';
@@ -265,8 +323,8 @@ export default function App() {
             tickers={tickers}
             currency={currency}
             onSelectCoin={handleSelectCoin}
-            onViewAllMarkets={() => setCurrentTab('market')}
-            onNavigateToTrade={() => setCurrentTab('trade')}
+            onViewAllMarkets={() => navigateTab('market')}
+            onNavigateToTrade={() => navigateTab('trade')}
             onNavigateToWithdraw={() => setIsWithdrawModalOpen(true)}
           />
         )}
@@ -288,6 +346,7 @@ export default function App() {
             currency={currency}
             onRefreshUser={refreshUserData}
             onTradePlaced={handleTradePlaced}
+            onNavigateToOrders={() => navigateTab('order')}
           />
         )}
 
@@ -295,7 +354,7 @@ export default function App() {
           <OrdersTab
             trades={userTrades}
             currency={currency}
-            onGoToTrade={() => setCurrentTab('trade')}
+            onGoToTrade={() => navigateTab('trade')}
             onViewTradeModal={handleViewTradeModal}
           />
         )}
@@ -311,7 +370,10 @@ export default function App() {
             onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
             onOpenChangePassword={() => setIsPasswordModalOpen(true)}
             onLogout={handleUserLogout}
-            onOpenAuth={() => setIsAuthModalOpen(true)}
+            onOpenAuth={() => {
+              setAuthModalMode('login');
+              setIsAuthModalOpen(true);
+            }}
             onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
           />
         )}
@@ -320,7 +382,7 @@ export default function App() {
       {/* Bottom Navigation */}
       <BottomNav
         currentTab={currentTab}
-        onChangeTab={setCurrentTab}
+        onChangeTab={navigateTab}
         runningOrderCount={runningTradesCount}
       />
 

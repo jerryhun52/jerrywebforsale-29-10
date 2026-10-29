@@ -131,34 +131,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [savedUsernames, setSavedUsernames] = useState<string[]>([]);
+  
+  interface SavedAccount {
+    username: string;
+    password?: string;
+    displayName?: string;
+  }
 
-  const loadSavedUsernames = () => {
+  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
+
+  const loadSavedAccounts = () => {
     try {
-      const raw = localStorage.getItem('flowcoin_saved_usernames');
-      if (raw) setSavedUsernames(JSON.parse(raw));
+      const raw = localStorage.getItem('flowcoin_saved_accounts');
+      let list: SavedAccount[] = raw ? JSON.parse(raw) : [];
+      if (!list.some(a => a.username.toLowerCase() === '123123123123')) {
+        list.push({ username: '123123123123', password: '123123', displayName: 'Demo Trader' });
+      }
+      setSavedAccounts(list);
     } catch {
-      // Ignore
+      setSavedAccounts([{ username: '123123123123', password: '123123', displayName: 'Demo Trader' }]);
     }
   };
 
-  const saveSuggestedUsername = (uname: string) => {
+  const saveAccountCredentials = (uname: string, pass: string, dName?: string) => {
     try {
-      const raw = localStorage.getItem('flowcoin_saved_usernames');
-      let list: string[] = raw ? JSON.parse(raw) : [];
-      list = list.filter(u => u.toLowerCase() !== uname.toLowerCase());
-      list.unshift(uname);
-      if (list.length > 2) list = list.slice(0, 2);
-      localStorage.setItem('flowcoin_saved_usernames', JSON.stringify(list));
-      setSavedUsernames(list);
+      const raw = localStorage.getItem('flowcoin_saved_accounts');
+      let list: SavedAccount[] = raw ? JSON.parse(raw) : [];
+      list = list.filter(a => a.username.toLowerCase() !== uname.toLowerCase());
+      list.unshift({
+        username: uname,
+        password: pass,
+        displayName: dName || uname
+      });
+      if (list.length > 3) list = list.slice(0, 3);
+      localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list));
+      setSavedAccounts(list);
     } catch (e) {
-      console.warn('Failed to save suggested username:', e);
+      console.warn('Failed to save account credentials:', e);
     }
   };
 
   React.useEffect(() => {
     if (isOpen) {
-      loadSavedUsernames();
+      loadSavedAccounts();
     }
   }, [isOpen]);
 
@@ -167,6 +182,132 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const currentCountry =
     COUNTRY_OPTIONS.find(c => resolveCurrency(c.code) === selectedCurrency) ||
     COUNTRY_OPTIONS[0];
+
+  const performLogin = async (cleanUser: string, cleanPass: string) => {
+    setError('');
+    setLoading(true);
+
+    try {
+      // 1. Check localDb first
+      const localCheck = localDb.login(cleanUser, cleanPass);
+      if (localCheck.success) {
+        if (localCheck.isAdmin && localCheck.admin) {
+          localStorage.setItem('flowcoin_admin_id', localCheck.admin.id);
+          if (onAdminLoginSuccess) onAdminLoginSuccess(localCheck.admin);
+          onClose();
+          return;
+        } else if (localCheck.user) {
+          saveAccountCredentials(cleanUser, cleanPass, localCheck.user.displayName);
+          onLoginSuccess(localCheck.user);
+          onClose();
+          return;
+        }
+      }
+
+      // 2. Direct Supabase Client Login Query
+      if (isSupabaseConfigured && supabase) {
+        const { data: userRows, error: userErr } = await supabase
+          .from('users')
+          .select('*')
+          .ilike('username', cleanUser)
+          .limit(1);
+
+        if (!userErr && userRows && userRows.length > 0) {
+          const row = userRows[0];
+
+          if (row.password_hash && row.password_hash !== cleanPass) {
+            setError('Invalid password. Please check capitalization.');
+            setLoading(false);
+            return;
+          }
+
+          if (row.status === 'Suspended' || row.status === 'Frozen') {
+            setError(`Account is ${row.status}. Contact Support Desk.`);
+            setLoading(false);
+            return;
+          }
+
+          // Check if admin account
+          if (['SUPREME_OWNER', 'SUPER_ADMIN', 'SUB_ADMIN', 'ADMIN'].includes(row.role)) {
+            const adminObj: AdminAccount = {
+              id: row.id,
+              username: row.username,
+              displayName: row.display_name || row.username,
+              role: row.role as any,
+              referralCode: row.referral_code_used || 'ROOT786',
+              permissions: ['manage_users', 'manage_trades', 'manage_finance', 'manage_notices', 'manage_subadmins'],
+              loginHistory: [],
+              createdAt: row.created_at
+            };
+            localStorage.setItem('flowcoin_admin_id', adminObj.id);
+            if (onAdminLoginSuccess) onAdminLoginSuccess(adminObj);
+            onClose();
+            return;
+          }
+
+          // Fetch balances
+          const { data: balRows } = await supabase
+            .from('balances')
+            .select('available_usd, frozen_usd')
+            .eq('user_id', row.id)
+            .limit(1);
+
+          const bal = balRows && balRows.length > 0 ? balRows[0] : null;
+          const userObj: User = {
+            id: row.id,
+            username: row.username,
+            displayName: row.display_name || row.username,
+            email: row.email,
+            nativeCurrency: row.native_currency || 'USD',
+            balance: bal ? Number(bal.available_usd) : 1000.0,
+            freezeBalance: bal ? Number(bal.frozen_usd) : 0.0,
+            creditScore: row.credit_score || 95,
+            status: row.status || 'Active',
+            tradeMode: row.trade_mode || 'AUTO',
+            referralCodeUsed: row.referral_code_used,
+            referredByAdminId: row.referred_by_admin_id,
+            registeredTime: row.registered_time || new Date().toLocaleString(),
+            createdAt: row.created_at
+          };
+
+          localDb.addUser(userObj);
+          saveAccountCredentials(cleanUser, cleanPass, userObj.displayName);
+          onLoginSuccess(userObj);
+          onClose();
+          return;
+        }
+      }
+
+      // Local storage auth fallback
+      const res = localDb.login(cleanUser, cleanPass);
+      if (res.success) {
+        if (res.isAdmin && res.admin) {
+          localStorage.setItem('flowcoin_admin_id', res.admin.id);
+          if (onAdminLoginSuccess) onAdminLoginSuccess(res.admin);
+          onClose();
+        } else if (res.user) {
+          saveAccountCredentials(cleanUser, cleanPass, res.user.displayName);
+          onLoginSuccess(res.user);
+          onClose();
+        }
+      } else {
+        setError(res.error || 'Login failed. Check your username and password.');
+      }
+    } catch (err: any) {
+      console.warn('Authentication error:', err);
+      setError(err?.message || 'Authentication error. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handle1ClickLogin = (acc: SavedAccount) => {
+    setUsername(acc.username);
+    if (acc.password) {
+      setPassword(acc.password);
+      performLogin(acc.username, acc.password);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,121 +334,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setError('Passwords do not match');
         return;
       }
-      // Default to ROOT786 if left blank
       if (!referralCode.trim()) {
         setReferralCode('ROOT786');
       }
-    }
 
-    setLoading(true);
-    try {
-      if (mode === 'login') {
-        // 1. Check localDb first for master/super admin accounts and local users
-        const localCheck = localDb.login(cleanUser, cleanPass);
-        if (localCheck.success) {
-          if (localCheck.isAdmin && localCheck.admin) {
-            localStorage.setItem('flowcoin_admin_id', localCheck.admin.id);
-            if (onAdminLoginSuccess) onAdminLoginSuccess(localCheck.admin);
-            onClose();
-            return;
-          } else if (localCheck.user) {
-            saveSuggestedUsername(cleanUser);
-            onLoginSuccess(localCheck.user);
-            onClose();
-            return;
-          }
-        }
-
-        // 2. Direct Supabase Client Login Query
-        if (isSupabaseConfigured && supabase) {
-          const { data: userRows, error: userErr } = await supabase
-            .from('users')
-            .select('*')
-            .ilike('username', cleanUser)
-            .limit(1);
-
-          if (!userErr && userRows && userRows.length > 0) {
-            const row = userRows[0];
-
-            if (row.password_hash && row.password_hash !== cleanPass) {
-              setError('Invalid password. Please check capitalization.');
-              setLoading(false);
-              return;
-            }
-
-            if (row.status === 'Suspended' || row.status === 'Frozen') {
-              setError(`Account is ${row.status}. Contact Support Desk.`);
-              setLoading(false);
-              return;
-            }
-
-            // Check if admin account
-            if (['SUPREME_OWNER', 'SUPER_ADMIN', 'SUB_ADMIN', 'ADMIN'].includes(row.role)) {
-              const adminObj: AdminAccount = {
-                id: row.id,
-                username: row.username,
-                displayName: row.display_name || row.username,
-                role: row.role as any,
-                referralCode: row.referral_code_used || 'ROOT786',
-                permissions: ['manage_users', 'manage_trades', 'manage_finance', 'manage_notices', 'manage_subadmins'],
-                loginHistory: [],
-                createdAt: row.created_at
-              };
-              localStorage.setItem('flowcoin_admin_id', adminObj.id);
-              if (onAdminLoginSuccess) onAdminLoginSuccess(adminObj);
-              onClose();
-              return;
-            }
-
-            // Fetch balances
-            const { data: balRows } = await supabase
-              .from('balances')
-              .select('available_usd, frozen_usd')
-              .eq('user_id', row.id)
-              .limit(1);
-
-            const bal = balRows && balRows.length > 0 ? balRows[0] : null;
-            const userObj: User = {
-              id: row.id,
-              username: row.username,
-              displayName: row.display_name || row.username,
-              email: row.email,
-              nativeCurrency: row.native_currency || 'USD',
-              balance: bal ? Number(bal.available_usd) : 1000.0,
-              freezeBalance: bal ? Number(bal.frozen_usd) : 0.0,
-              creditScore: row.credit_score || 95,
-              status: row.status || 'Active',
-              tradeMode: row.trade_mode || 'AUTO',
-              referralCodeUsed: row.referral_code_used,
-              referredByAdminId: row.referred_by_admin_id,
-              registeredTime: row.registered_time || new Date().toLocaleString(),
-              createdAt: row.created_at
-            };
-
-            localDb.addUser(userObj);
-            saveSuggestedUsername(cleanUser);
-            onLoginSuccess(userObj);
-            onClose();
-            return;
-          }
-        }
-
-        // Local storage auth fallback (No fetch network request)
-        const res = localDb.login(cleanUser, cleanPass);
-        if (res.success) {
-          if (res.isAdmin && res.admin) {
-            localStorage.setItem('flowcoin_admin_id', res.admin.id);
-            if (onAdminLoginSuccess) onAdminLoginSuccess(res.admin);
-            onClose();
-          } else if (res.user) {
-            saveSuggestedUsername(cleanUser);
-            onLoginSuccess(res.user);
-            onClose();
-          }
-        } else {
-          setError(res.error || 'Login failed. Check your username and password.');
-        }
-      } else {
+      setLoading(true);
+      try {
         const cleanRef = cleanMobileInput(referralCode || 'ROOT786').toUpperCase();
         const res = await api.registerUser({
           username: cleanUser,
@@ -318,18 +350,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         });
 
         if (res.success && res.user) {
-          saveSuggestedUsername(cleanUser);
+          saveAccountCredentials(cleanUser, cleanPass, res.user.displayName);
           onLoginSuccess(res.user);
           onClose();
         } else {
           setError(res.error || 'Registration failed. Try a different username.');
         }
+      } catch (err: any) {
+        setError(err?.message || 'Registration error');
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      console.warn('Authentication error:', err);
-      setError(err?.message || 'Authentication error. Please check your credentials.');
-    } finally {
-      setLoading(false);
+    } else {
+      performLogin(cleanUser, cleanPass);
     }
   };
 
@@ -593,20 +626,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ) : (
               /* LOGIN FORM */
               <>
-                {savedUsernames.length > 0 && (
-                  <div className="mb-2">
-                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
-                      Recent Accounts (1-Click Fill):
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {savedUsernames.map(saved => (
+                {savedAccounts.length > 0 && (
+                  <div className="mb-3 p-3 rounded-2xl bg-[#080d17] border border-cyan-500/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black text-cyan-300 flex items-center space-x-1">
+                        <span>⚡ Last Login (1-Click Auto Login):</span>
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/70 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        Password Saved
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {savedAccounts.map(acc => (
                         <button
-                          key={saved}
+                          key={acc.username}
                           type="button"
-                          onClick={() => setUsername(saved)}
-                          className="px-2.5 py-1 rounded-xl bg-[#080d17] hover:bg-cyan-950/80 border border-slate-700 hover:border-cyan-500/50 text-cyan-300 text-xs font-mono font-bold flex items-center space-x-1 transition-all"
+                          onClick={() => handle1ClickLogin(acc)}
+                          className="w-full px-3 py-2 rounded-xl bg-[#0c1424] hover:bg-cyan-950/90 border border-slate-700 hover:border-cyan-400 flex items-center justify-between text-left transition-all group active:scale-[0.98]"
                         >
-                          <span>👤 @{saved}</span>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-6 h-6 rounded-lg bg-cyan-900/40 border border-cyan-500/30 text-cyan-300 flex items-center justify-center font-bold text-[10px]">
+                              👤
+                            </div>
+                            <div>
+                              <div className="text-xs font-black text-white font-mono">@{acc.username}</div>
+                              <div className="text-[10px] text-slate-400">{acc.displayName || 'Trader'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-1 text-[11px] font-bold text-cyan-400 group-hover:text-white">
+                            <span>Instant Login</span>
+                            <span className="group-hover:translate-x-0.5 transition-transform">➔</span>
+                          </div>
                         </button>
                       ))}
                     </div>

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Plus, ArrowUp, ArrowDown, CheckCircle, XCircle, Clock, X, Info } from 'lucide-react';
 import { TradeOrder, Currency, CURRENCIES } from '../types.ts';
+import { api } from '../services/api.ts';
 
 interface OrdersTabProps {
   trades: TradeOrder[];
@@ -20,6 +21,12 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
 
   const [now, setNow] = useState<number>(Date.now());
 
+  const currentMeta = CURRENCIES[currency] || CURRENCIES.USD;
+  const rate = currentMeta.rate || 1.0;
+
+  const runningTrades = useMemo(() => trades.filter(t => t.status === 'RUNNING'), [trades]);
+  const settledTrades = useMemo(() => trades.filter(t => t.status === 'SETTLED'), [trades]);
+
   // Live timer tick every second for running orders
   useEffect(() => {
     const interval = setInterval(() => {
@@ -31,16 +38,13 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
   // Auto-settle any running trade that reaches 0s
   useEffect(() => {
     runningTrades.forEach(t => {
-      const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt).getTime() + (t.durationSeconds || 60) * 1000;
+      const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt || Date.now()).getTime() + (t.durationSeconds || 60) * 1000;
       const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
       if (secondsLeft <= 0) {
         api.settleTrade(t.id).catch(console.error);
       }
     });
   }, [now, runningTrades]);
-
-  const runningTrades = useMemo(() => trades.filter(t => t.status === 'RUNNING'), [trades]);
-  const settledTrades = useMemo(() => trades.filter(t => t.status === 'SETTLED'), [trades]);
 
   const displayedTrades = useMemo(() => {
     if (filter === 'running') return runningTrades;
@@ -49,7 +53,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
   }, [trades, filter, runningTrades, settledTrades]);
 
   const formatPrice = (pUsd: number) => {
-    const val = pUsd * rate;
+    const val = (pUsd || 0) * rate;
     if (val >= 1000) {
       return `${currentMeta.symbol}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
@@ -136,7 +140,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
             const isWon = order.outcome === 'WIN';
             const isSettled = order.status === 'SETTLED';
 
-            const expiresAtMs = order.expiresAt ? new Date(order.expiresAt).getTime() : new Date(order.createdAt).getTime() + (order.durationSeconds || 60) * 1000;
+            const expiresAtMs = order.expiresAt ? new Date(order.expiresAt).getTime() : new Date(order.createdAt || Date.now()).getTime() + (order.durationSeconds || 60) * 1000;
             const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
 
             return (

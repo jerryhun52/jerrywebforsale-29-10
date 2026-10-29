@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ArrowUp, ArrowDown, Clock, CheckCircle2, XCircle, Check } from 'lucide-react';
+import { ChevronDown, ArrowUp, ArrowDown, Clock, CheckCircle2, XCircle, Check, X, Eye, ExternalLink } from 'lucide-react';
 import { CoinTicker, Currency, CURRENCIES, User, Candlestick, TradeOrder } from '../types.ts';
 import { CandlestickChart } from './CandlestickChart.tsx';
 import { api } from '../services/api.ts';
@@ -12,6 +12,7 @@ interface TradeTabProps {
   currency: Currency;
   onRefreshUser: () => void;
   onTradePlaced: (trade: TradeOrder) => void;
+  onNavigateToOrders: () => void;
 }
 
 interface DurationOption {
@@ -36,7 +37,8 @@ export const TradeTab: React.FC<TradeTabProps> = ({
   tickers,
   currency,
   onRefreshUser,
-  onTradePlaced
+  onTradePlaced,
+  onNavigateToOrders
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [timeframe, setTimeframe] = useState('1m');
@@ -163,8 +165,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
         onRefreshUser();
         onTradePlaced(res.trade);
         playTradeSound();
-        setTradeSuccessBanner(res.trade);
-        setTimeout(() => setTradeSuccessBanner(null), 4000);
+        setPlacedTradePopup(res.trade);
       } else {
         setTradeErrorModal(res.error || 'Insufficient balance');
       }
@@ -492,32 +493,100 @@ export const TradeTab: React.FC<TradeTabProps> = ({
         </div>
       )}
 
-      {/* SLEEK INSTANT SUCCESS TOAST BANNER */}
-      {tradeSuccessBanner && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#0c1322] border border-emerald-500/60 p-3.5 rounded-2xl shadow-2xl animate-scaleUp flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0">
-              <Check className="w-5 h-5 stroke-[3]" />
+      {/* POPUP MODAL: TRADE SUCCESSFULLY PLACED WITH DIRECT 'VIEW' BUTTON */}
+      {placedTradePopup && (
+        <div
+          onClick={() => setPlacedTradePopup(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-[#0c1322] border border-cyan-500/50 p-5 shadow-2xl space-y-4 animate-scaleUp text-center relative"
+          >
+            {/* Top Close Button */}
+            <button
+              onClick={() => setPlacedTradePopup(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Glowing Icon */}
+            <div className={`w-14 h-14 rounded-full mx-auto flex items-center justify-center shadow-lg ${
+              placedTradePopup.direction === 'UP'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-emerald-500/20'
+                : 'bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-rose-500/20'
+            }`}>
+              {placedTradePopup.direction === 'UP' ? (
+                <ArrowUp className="w-8 h-8 stroke-[2.5]" />
+              ) : (
+                <ArrowDown className="w-8 h-8 stroke-[2.5]" />
+              )}
             </div>
+
+            {/* Title & Coin Confirmation */}
             <div>
-              <div className="text-xs font-black text-white flex items-center space-x-1.5">
-                <span>Order Placed!</span>
-                <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${tradeSuccessBanner.direction === 'UP' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
-                  {tradeSuccessBanner.direction === 'UP' ? 'BUY UP' : 'BUY DOWN'}
-                </span>
+              <div className="inline-flex items-center space-x-1.5 px-3 py-0.5 rounded-full text-xs font-black bg-cyan-950 text-cyan-300 border border-cyan-500/40 mb-1.5">
+                <span>✓ Order Placed Smoothly</span>
               </div>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                {tradeSuccessBanner.symbol} • {formatNativeAmount(tradeSuccessBanner.marginUsd)} • View live timer in <strong className="text-cyan-400">Orders Tab</strong>
+              <h3 className="text-xl font-black text-white">
+                {placedTradePopup.symbol} Trade Active
+              </h3>
+              <p className="text-xs text-slate-300 mt-1">
+                Aapne <strong className="text-white">{placedTradePopup.symbol}</strong> py <strong className={placedTradePopup.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}>{placedTradePopup.direction === 'UP' ? 'BUY UP (Green)' : 'BUY DOWN (Red)'}</strong> contract enter kr lia hy.
               </p>
             </div>
-          </div>
 
-          <button
-            onClick={() => setTradeSuccessBanner(null)}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
+            {/* Details Box */}
+            <div className="bg-[#080d17] p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2 text-left font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Target Coin:</span>
+                <span className="font-extrabold text-white text-sm">{placedTradePopup.symbol}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Invested Margin:</span>
+                <span className="font-extrabold text-amber-400 text-sm">
+                  {formatNativeAmount(placedTradePopup.marginUsd)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Duration & Profit:</span>
+                <span className="text-cyan-300 font-extrabold">
+                  {placedTradePopup.durationSeconds}s (+{placedTradePopup.profitPercent}% Yield)
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Entry Strike Price:</span>
+                <span className="text-slate-200 font-bold">
+                  {formatCoinPrice(placedTradePopup.entryPrice)}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons: VIEW Button & Continue */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPlacedTradePopup(null);
+                  onNavigateToOrders();
+                }}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-cyan-400 text-white font-black text-sm shadow-xl shadow-cyan-600/30 flex items-center justify-center space-x-2 transition-all active:scale-95"
+              >
+                <Eye className="w-4 h-4 stroke-[2.5]" />
+                <span>View Order / Live Countdown</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPlacedTradePopup(null)}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+              >
+                Continue Trading
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

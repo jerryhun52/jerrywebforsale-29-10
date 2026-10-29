@@ -11,6 +11,7 @@ import {
   UserStatus,
   Currency
 } from '../types.ts';
+import { cleanMobileInput, isPasswordEquivalent } from '../utils/sanitizer.ts';
 import { localDb } from './localDb.ts';
 import { supabase, isSupabaseConfigured } from './supabase.ts';
 import { db as firestoreDb } from './firebase.ts';
@@ -388,17 +389,92 @@ export const api = {
     return localDb.resetPassword(userId, newPass);
   },
 
-  // Admin Auth & Profile
+  // Admin Auth & Profile with Multi-device Backend & Firestore sync
   async loginAdmin(username: string, password: string): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
-    const res = localDb.login(username, password);
+    const cleanUser = cleanMobileInput(username || '').toLowerCase();
+    const cleanPass = cleanMobileInput(password || '');
+
+    // 1. Check localDb first
+    const res = localDb.login(cleanUser, cleanPass);
     if (res.isAdmin && res.admin) {
       return { success: true, admin: res.admin };
     }
+
+    // 2. Try Backend Server API (/api/admin/login)
+    try {
+      const resp = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUser, password: cleanPass })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.admin) {
+          localDb.addAdmin(data.admin);
+          return { success: true, admin: data.admin };
+        }
+      }
+    } catch (e) {
+      // Backend request fallback
+    }
+
+    // 3. Try Firestore `admins` collection (Cross-device persistence)
+    if (firestoreDb) {
+      try {
+        const snap = await getDocs(collection(firestoreDb, 'admins'));
+        let matchedAdmin: AdminAccount | null = null;
+        snap.forEach(d => {
+          const adm = d.data() as AdminAccount;
+          if (adm && adm.username && cleanMobileInput(adm.username).toLowerCase() === cleanUser) {
+            if (isPasswordEquivalent(cleanPass, adm.password || '')) {
+              matchedAdmin = adm;
+            }
+          }
+        });
+        if (matchedAdmin) {
+          localDb.addAdmin(matchedAdmin);
+          return { success: true, admin: matchedAdmin };
+        }
+      } catch (e) {
+        // Handled
+      }
+    }
+
     return { success: false, error: res.error || 'Invalid administrator credentials' };
   },
 
   async getAdminProfile(id: string): Promise<{ success: boolean; admin?: AdminAccount; error?: string }> {
-    return localDb.getAdminProfile(id);
+    // 1. Check localDb
+    const localRes = localDb.getAdminProfile(id);
+    if (localRes.success && localRes.admin) {
+      return localRes;
+    }
+
+    // 2. Check Backend Server API
+    try {
+      const resp = await fetch(`/api/admin/profile/${id}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.admin) {
+          localDb.addAdmin(data.admin);
+          return { success: true, admin: data.admin };
+        }
+      }
+    } catch (e) {}
+
+    // 3. Check Firestore
+    if (firestoreDb) {
+      try {
+        const snap = await getDoc(doc(firestoreDb, 'admins', id));
+        if (snap.exists()) {
+          const adm = snap.data() as AdminAccount;
+          localDb.addAdmin(adm);
+          return { success: true, admin: adm };
+        }
+      } catch (e) {}
+    }
+
+    return { success: false, error: 'Admin account not found' };
   },
 
   // Admin User Management with Multi-Cloud Unified Sync
@@ -583,9 +659,45 @@ export const api = {
     return localDb.saveSupportDesk(payload.adminId, payload.telegramSupportLink, payload.prefilledMessage);
   },
 
-  // Sub-Admins Management
+  // Sub-Admins Management with Cross-Device Persistence
   async getSubAdmins(adminId?: string): Promise<AdminAccount[]> {
-    return localDb.getAllAdmins(adminId);
+    const adminMap = new Map<string, AdminAccount>();
+    // 1. Load localDb
+    localDb.getAllAdmins(adminId).forEach(a => adminMap.set(a.id, a));
+
+    // 2. Load from Backend Server
+    try {
+      const resp = await fetch(`/api/admin/subadmins${adminId ? `?adminId=${adminId}` : ''}`);
+      if (resp.ok) {
+        const list = await resp.json();
+        if (Array.isArray(list)) {
+          list.forEach((a: AdminAccount) => {
+            if (!adminMap.has(a.id)) {
+              adminMap.set(a.id, a);
+              localDb.addAdmin(a);
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // 3. Load from Firestore
+    if (firestoreDb) {
+      try {
+        const snap = await getDocs(collection(firestoreDb, 'admins'));
+        snap.forEach(d => {
+          const a = d.data() as AdminAccount;
+          if (a && a.id) {
+            if (!adminMap.has(a.id)) {
+              adminMap.set(a.id, a);
+              localDb.addAdmin(a);
+            }
+          }
+        });
+      } catch {}
+    }
+
+    return Array.from(adminMap.values());
   },
 
   async createSubAdmin(payload: {
@@ -596,23 +708,58 @@ export const api = {
     permissions: string[];
     displayName?: string;
   }): Promise<any> {
-    return localDb.createSubAdmin(payload);
+    const res = localDb.createSubAdmin(payload);
+    if (!res.success || !res.admin) {
+      return res;
+    }
+
+    const createdAdmin = res.admin;
+
+    // 1. Sync to backend server
+    try {
+      fetch('/api/admin/subadmins/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(console.warn);
+    } catch {}
+
+    // 2. Sync to Firestore
+    if (firestoreDb) {
+      try {
+        setDoc(doc(firestoreDb, 'admins', createdAdmin.id), createdAdmin).catch(console.warn);
+      } catch {}
+    }
+
+    return res;
   },
 
   async updateSubAdmin(adminId: string, updates: Partial<AdminAccount>): Promise<any> {
-    return localDb.updateSubAdmin(adminId, updates);
+    const res = localDb.updateSubAdmin(adminId, updates);
+    if (firestoreDb && res.admin) {
+      setDoc(doc(firestoreDb, 'admins', adminId), updates, { merge: true }).catch(console.warn);
+    }
+    return res;
   },
 
   async deleteSubAdmin(adminId: string): Promise<any> {
-    return localDb.deleteSubAdmin(adminId);
+    const res = localDb.deleteSubAdmin(adminId);
+    if (firestoreDb) {
+      deleteDoc(doc(firestoreDb, 'admins', adminId)).catch(console.warn);
+    }
+    return res;
   },
 
   async customizeReferralCode(adminId: string, newReferralCode: string): Promise<any> {
-    return localDb.customizeReferral(adminId, newReferralCode);
+    const res = localDb.customizeReferral(adminId, newReferralCode);
+    if (firestoreDb) {
+      setDoc(doc(firestoreDb, 'admins', adminId), { referralCode: newReferralCode }, { merge: true }).catch(console.warn);
+    }
+    return res;
   },
 
   async getSessionsAudit(_adminId: string): Promise<any[]> {
-    const admins = localDb.getAllAdmins();
+    const admins = await this.getSubAdmins(_adminId);
     const logs: any[] = [];
     admins.forEach(adm => {
       (adm.loginHistory || []).forEach(sess => {
@@ -644,45 +791,48 @@ export const api = {
   }): Promise<any> {
     const entryPrice = payload.entryPrice || (dynamicPrices[payload.symbol] || FALLBACK_COINS[payload.symbol]?.base || 81400);
     const fullPayload = { ...payload, entryPrice };
+    
+    // Execute trade in database immediately (0ms delay)
     const res = localDb.createTrade(fullPayload);
 
-    // Sync to Supabase if enabled
-    if (res.success && res.trade && isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('trades').insert({
-          id: res.trade.id,
-          user_id: res.trade.userId,
-          username: res.trade.username,
-          symbol: res.trade.symbol,
-          direction: res.trade.direction,
-          duration_seconds: res.trade.durationSeconds,
-          profit_percent: res.trade.profitPercent,
-          margin_usd: res.trade.marginUsd,
-          entry_price: res.trade.entryPrice,
-          outcome: 'PENDING',
-          status: 'RUNNING',
-          created_at: res.trade.createdAt
-        });
-      } catch {
-        // Handled
+    if (res.success && res.trade) {
+      // Background non-blocking sync to Supabase
+      if (isSupabaseConfigured && supabase) {
+        (async () => {
+          try {
+            await supabase.from('trades').insert({
+              id: res.trade.id,
+              user_id: res.trade.userId,
+              username: res.trade.username,
+              symbol: res.trade.symbol,
+              direction: res.trade.direction,
+              duration_seconds: res.trade.durationSeconds,
+              profit_percent: res.trade.profitPercent,
+              margin_usd: res.trade.marginUsd,
+              entry_price: res.trade.entryPrice,
+              outcome: 'PENDING',
+              status: 'RUNNING',
+              created_at: res.trade.createdAt
+            });
+          } catch (e) {
+            console.warn('Supabase trade sync warning:', e);
+          }
+        })();
       }
-    }
 
-    // Sync to Firestore
-    if (res.success && res.trade && firestoreDb) {
-      try {
-        await setDoc(doc(firestoreDb, 'trades', res.trade.id), res.trade);
-      } catch {
-        // Handled
+      // Background non-blocking sync to Firestore
+      if (firestoreDb) {
+        setDoc(doc(firestoreDb, 'trades', res.trade.id), res.trade).catch(console.warn);
       }
-    }
 
-    if (res.success && res.trade && typeof window !== 'undefined') {
-      try {
-        window.dispatchEvent(new CustomEvent('flowcoin_new_trade_placed', { detail: res.trade }));
-        localStorage.setItem('flowcoin_last_trade_time', Date.now().toString());
-      } catch (e) {
-        console.warn('Trade event dispatch warning:', e);
+      // Immediate window event broadcast
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('flowcoin_new_trade_placed', { detail: res.trade }));
+          localStorage.setItem('flowcoin_last_trade_time', Date.now().toString());
+        } catch (e) {
+          console.warn('Trade event dispatch warning:', e);
+        }
       }
     }
 

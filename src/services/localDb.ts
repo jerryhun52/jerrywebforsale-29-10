@@ -484,6 +484,19 @@ export const localDb = {
     saveDb(db);
   },
 
+  addAdmin(admin: AdminAccount): void {
+    const db = getDb();
+    const existing = db.adminAccounts.findIndex(
+      a => a.id === admin.id || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(admin.username).toLowerCase()
+    );
+    if (existing >= 0) {
+      db.adminAccounts[existing] = { ...db.adminAccounts[existing], ...admin };
+    } else {
+      db.adminAccounts.push(admin);
+    }
+    saveDb(db);
+  },
+
   getUserProfile(id: string): { success: boolean; user?: User; error?: string } {
     const db = getDb();
     const user = db.users.find(u => u.id === id);

@@ -170,7 +170,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           {runningTrades.length > 0 ? (
             <div className="pt-2 border-t border-white/15 text-xs space-y-1.5">
               {runningTrades.map(t => {
-                const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt).getTime() + (t.durationSeconds || 60) * 1000;
+                const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt || Date.now()).getTime() + (t.durationSeconds || 60) * 1000;
                 const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
                 return (
                   <div key={t.id} className="bg-black/25 p-2 rounded-xl text-[11px] flex items-center justify-between">

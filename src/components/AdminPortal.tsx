@@ -1189,18 +1189,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
               <span>Support Team Notice</span>
             </button>
 
-            {/* 7. Admin Settings & Accounts */}
-            <button
-              onClick={() => setAdminTab('subadmins')}
-              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                adminTab === 'subadmins'
-                  ? 'bg-amber-500 text-slate-950 font-black shadow'
-                  : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Admin Settings & Accounts ({subadmins.length})</span>
-            </button>
+            {/* 7. Admin Settings & Accounts (Hidden for Sub-Admins) */}
+            {currentAdmin.role !== 'SUB_ADMIN' && (
+              <button
+                onClick={() => setAdminTab('subadmins')}
+                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  adminTab === 'subadmins'
+                    ? 'bg-amber-500 text-slate-950 font-black shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Admin Settings & Accounts ({subadmins.length})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1411,7 +1413,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         {/* ============================================================ */}
         {/* TAB CONTENT: ADMIN SETTINGS & ACCOUNTS (Screenshot 5) */}
         {/* ============================================================ */}
-        {adminTab === 'subadmins' && (
+        {adminTab === 'subadmins' && currentAdmin.role !== 'SUB_ADMIN' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* Left Column: Create New Admin Account (Screenshot 5) */}
@@ -1647,9 +1649,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                     <Key className="w-4 h-4 text-amber-400" />
                     <span>Administrator Login Sessions & Active Devices Audit</span>
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Track login timestamps, IP addresses, and device history for Supreme Owner (@jerry@786), Master Admin (@jerry@321) & sub-admins.
-                  </p>
                 </div>
                 <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black border border-emerald-500/30">
                   Live Audit Trail
