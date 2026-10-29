@@ -161,8 +161,28 @@ export default function App() {
   useEffect(() => {
     if (user) {
       refreshUserData();
-      const interval = setInterval(refreshUserData, 4000);
-      return () => clearInterval(interval);
+      const interval = setInterval(refreshUserData, 3000);
+
+      const handleBalanceEvent = (e: any) => {
+        if (e.detail && e.detail.id === user.id) {
+          setUser(e.detail);
+        }
+      };
+
+      const handleStorage = (e: StorageEvent) => {
+        if (e.key === 'flowcoin_persistent_db_v2') {
+          refreshUserData();
+        }
+      };
+
+      window.addEventListener('flowcoin_user_balance_updated', handleBalanceEvent);
+      window.addEventListener('storage', handleStorage);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('flowcoin_user_balance_updated', handleBalanceEvent);
+        window.removeEventListener('storage', handleStorage);
+      };
     }
   }, [user?.id]);
 

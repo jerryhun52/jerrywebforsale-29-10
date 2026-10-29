@@ -318,44 +318,46 @@ export const api = {
   },
 
   async getUserProfile(id: string): Promise<{ success: boolean; user?: User; error?: string }> {
+    const localRes = localDb.getUserProfile(id);
+    const localUser = localRes.success ? localRes.user : null;
+
+    let cloudUser: User | null = null;
+
     // Check Firestore
     if (firestoreDb) {
       try {
         const snap = await getDoc(doc(firestoreDb, 'users', id));
         if (snap.exists()) {
-          return { success: true, user: snap.data() as User };
+          cloudUser = snap.data() as User;
         }
       } catch {
         // Fallback
       }
     }
 
-    // Check Supabase
-    if (isSupabaseConfigured && supabase) {
+    // Check Supabase if Firestore didn't find
+    if (!cloudUser && isSupabaseConfigured && supabase) {
       try {
         const { data: userRows } = await supabase.from('users').select('*').eq('id', id).limit(1);
         if (userRows && userRows.length > 0) {
           const row = userRows[0];
           const { data: balanceRows } = await supabase.from('balances').select('*').eq('user_id', id).limit(1);
           const bal = balanceRows && balanceRows.length > 0 ? balanceRows[0] : null;
-          return {
-            success: true,
-            user: {
-              id: row.id,
-              username: row.username,
-              displayName: row.display_name || row.username,
-              email: row.email,
-              nativeCurrency: row.native_currency || 'USD',
-              balance: bal ? Number(bal.available_usd) : 0,
-              freezeBalance: bal ? Number(bal.frozen_usd) : 0,
-              creditScore: row.credit_score || 100,
-              status: row.status || 'Active',
-              tradeMode: row.trade_mode || 'AUTO',
-              referralCodeUsed: row.referral_code_used,
-              referredByAdminId: row.referred_by_admin_id,
-              registeredTime: row.registered_time || new Date().toLocaleString(),
-              createdAt: row.created_at
-            }
+          cloudUser = {
+            id: row.id,
+            username: row.username,
+            displayName: row.display_name || row.username,
+            email: row.email,
+            nativeCurrency: row.native_currency || 'USD',
+            balance: bal ? Number(bal.available_usd) : 0,
+            freezeBalance: bal ? Number(bal.frozen_usd) : 0,
+            creditScore: row.credit_score || 100,
+            status: row.status || 'Active',
+            tradeMode: row.trade_mode || 'AUTO',
+            referralCodeUsed: row.referral_code_used,
+            referredByAdminId: row.referred_by_admin_id,
+            registeredTime: row.registered_time || new Date().toLocaleString(),
+            createdAt: row.created_at
           };
         }
       } catch {
@@ -363,7 +365,23 @@ export const api = {
       }
     }
 
-    return localDb.getUserProfile(id);
+    if (localUser) {
+      if (cloudUser) {
+        const effectiveBalance = Math.max(Number(localUser.balance || 0), Number(cloudUser.balance || 0));
+        const effectiveFreeze = Math.max(Number(localUser.freezeBalance || 0), Number(cloudUser.freezeBalance || 0));
+        localUser.balance = effectiveBalance;
+        localUser.freezeBalance = effectiveFreeze;
+        localDb.addUser(localUser);
+      }
+      return { success: true, user: localUser };
+    }
+
+    if (cloudUser) {
+      localDb.addUser(cloudUser);
+      return { success: true, user: cloudUser };
+    }
+
+    return { success: false, error: 'User account not found.' };
   },
 
   async changePassword(userId: string, _oldPass: string, newPass: string): Promise<any> {
@@ -469,20 +487,25 @@ export const api = {
               frozen_usd: res.user.freezeBalance,
               updated_at: new Date().toISOString()
             });
-        } catch {
-          // Handled
+        } catch (err) {
+          console.warn('Supabase balance update sync error:', err);
         }
       }
       // Sync to Firestore
       if (firestoreDb) {
         try {
-          await updateDoc(doc(firestoreDb, 'users', userId), {
+          await setDoc(doc(firestoreDb, 'users', userId), {
             balance: res.user.balance,
             freezeBalance: res.user.freezeBalance
-          });
-        } catch {
-          // Handled
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Firestore balance update sync error:', err);
         }
+      }
+
+      // Broadcast real-time balance update event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
       }
     }
     return res;

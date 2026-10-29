@@ -594,7 +594,7 @@ export const localDb = {
     const user = db.users.find(u => u.id === trade.userId);
     if (!user) return { error: 'User not found' };
     if (user.balance < (trade.marginUsd || 0)) {
-      return { error: 'Insufficient balance' };
+      return { error: `Insufficient balance! Your available balance is ${user.balance}.` };
     }
     user.balance = +(user.balance - (trade.marginUsd || 0)).toFixed(2);
     user.freezeBalance = +(user.freezeBalance + (trade.marginUsd || 0)).toFixed(2);
