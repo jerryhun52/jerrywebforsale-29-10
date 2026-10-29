@@ -379,8 +379,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                 const newTrade = change.doc.data() as TradeOrder;
                 if (isClientScoped(newTrade.userId, newTrade.username)) {
                   playRegistrationChime();
+                  const u = users.find(usr => usr.id === newTrade.userId);
+                  const meta = CURRENCIES[newTrade.nativeCurrency || u?.nativeCurrency || 'INR'] || CURRENCIES.INR;
+                  const nativeAmt = newTrade.marginNative || (newTrade.marginUsd * meta.rate);
+                  const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
                   setAdminNotificationToast(
-                    `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: $${newTrade.marginUsd}`
+                    `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: ${formattedNative} ($${newTrade.marginUsd} USD)`
                   );
                   setTimeout(() => setAdminNotificationToast(null), 6000);
                 }
@@ -447,7 +451,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
       if (e.detail && !isClientScoped(e.detail.userId, e.detail.username)) return;
       fetchAllAdminData();
       playRegistrationChime();
-      setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed $${e.detail?.marginUsd || ''} on ${e.detail?.symbol} (${e.detail?.direction})`);
+      const meta = CURRENCIES[(e.detail?.nativeCurrency as Currency) || 'INR'] || CURRENCIES.INR;
+      const nativeAmt = e.detail?.marginNative || ((e.detail?.marginUsd || 0) * meta.rate);
+      const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
+      setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed ${formattedNative} ($${e.detail?.marginUsd || ''} USD) on ${e.detail?.symbol} (${e.detail?.direction})`);
       setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
@@ -1956,7 +1963,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                               <div>
                                 <span className="text-[10px] text-slate-400 block">Trade Amount</span>
                                 <span className="font-black text-amber-400 text-sm">
-                                  ${t.marginUsd} <span className="text-[10px] text-slate-400">({userMeta.symbol}{t.marginNative || (t.marginUsd * userMeta.rate).toFixed(0)})</span>
+                                  {userMeta.code !== 'USD' ? (
+                                    <>
+                                      {userMeta.flag} {userMeta.symbol}{Number(t.marginNative || (t.marginUsd * userMeta.rate)).toLocaleString()} {userMeta.code}
+                                      <span className="text-[10px] text-slate-400 block font-normal">(${t.marginUsd} USD)</span>
+                                    </>
+                                  ) : (
+                                    <>${t.marginUsd} USD</>
+                                  )}
                                 </span>
                               </div>
                               <div>
@@ -2097,7 +2111,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                       <th className="py-2.5 px-3">Trade ID / User</th>
                       <th className="py-2.5 px-3">Symbol & Direction</th>
                       <th className="py-2.5 px-3">Duration & Yield</th>
-                      <th className="py-2.5 px-3">Margin USD</th>
+                      <th className="py-2.5 px-3">Margin Amount</th>
                       <th className="py-2.5 px-3">Entry Strike</th>
                       <th className="py-2.5 px-3">Status / Outcome</th>
                       <th className="py-2.5 px-3 text-right">Admin Actions</th>
@@ -2117,7 +2131,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                           </span>
                         </td>
                         <td className="py-2.5 px-3">{t.durationSeconds}s (+{t.profitPercent}%)</td>
-                        <td className="py-2.5 px-3 font-black text-amber-400">${t.marginUsd}</td>
+                        <td className="py-2.5 px-3 font-black text-amber-400">
+                          {(() => {
+                            const u = users.find(usr => usr.id === t.userId);
+                            const meta = CURRENCIES[t.nativeCurrency || u?.nativeCurrency || 'INR'] || CURRENCIES.INR;
+                            const nativeAmt = t.marginNative || (t.marginUsd * meta.rate);
+                            return meta.code !== 'USD' ? (
+                              <div>
+                                <span className="text-xs font-black text-amber-400 block font-sans">
+                                  {meta.flag} {meta.symbol}{Number(nativeAmt).toLocaleString()} {meta.code}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block font-normal font-mono">
+                                  (${t.marginUsd} USD)
+                                </span>
+                              </div>
+                            ) : (
+                              <span>${t.marginUsd}</span>
+                            );
+                          })()}
+                        </td>
                         <td className="py-2.5 px-3">${t.entryPrice}</td>
                         <td className="py-2.5 px-3 font-sans">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
