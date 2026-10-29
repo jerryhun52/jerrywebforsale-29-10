@@ -677,6 +677,15 @@ export const api = {
       }
     }
 
+    if (res.success && res.trade && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_new_trade_placed', { detail: res.trade }));
+        localStorage.setItem('flowcoin_last_trade_time', Date.now().toString());
+      } catch (e) {
+        console.warn('Trade event dispatch warning:', e);
+      }
+    }
+
     return res;
   },
 
@@ -706,13 +715,28 @@ export const api = {
     // Sync to Firestore
     if (res.success && res.trade && firestoreDb) {
       try {
-        await updateDoc(doc(firestoreDb, 'trades', tradeId), {
+        await setDoc(doc(firestoreDb, 'trades', tradeId), {
           outcome: chosenOutcome,
           status: 'SETTLED',
           exitPrice: chosenPrice,
           payoutUsd: res.trade.payoutUsd,
           settledAt: new Date().toISOString()
-        });
+        }, { merge: true });
+
+        await setDoc(doc(firestoreDb, 'users', res.trade.userId), {
+          balance: res.balance,
+          freezeBalance: res.freezeBalance
+        }, { merge: true });
+      } catch {
+        // Handled
+      }
+    }
+
+    if (res.success && res.trade && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', {
+          detail: { id: res.trade.userId, balance: res.balance, freezeBalance: res.freezeBalance }
+        }));
       } catch {
         // Handled
       }
@@ -774,6 +798,15 @@ export const api = {
       }
     }
 
+    if (res.success && res.request && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_new_wallet_request', { detail: res.request }));
+        localStorage.setItem('flowcoin_last_request_time', Date.now().toString());
+      } catch (e) {
+        console.warn('Wallet event dispatch warning:', e);
+      }
+    }
+
     return res;
   },
 
@@ -826,6 +859,15 @@ export const api = {
         });
       } catch {
         // Handled
+      }
+    }
+
+    if (res.success && res.request && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_new_wallet_request', { detail: res.request }));
+        localStorage.setItem('flowcoin_last_request_time', Date.now().toString());
+      } catch (e) {
+        console.warn('Wallet event dispatch warning:', e);
       }
     }
 

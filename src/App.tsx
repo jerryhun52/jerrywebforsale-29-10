@@ -186,6 +186,8 @@ export default function App() {
     }
   }, [user?.id]);
 
+  const [unviewedTradeIds, setUnviewedTradeIds] = useState<string[]>([]);
+
   const handleSelectCoin = (symbol: string) => {
     setSelectedSymbol(symbol);
     setCurrentTab('trade');
@@ -194,6 +196,7 @@ export default function App() {
 
   const handleTradePlaced = (newTrade: TradeOrder) => {
     setUserTrades(prev => [newTrade, ...prev]);
+    setUnviewedTradeIds(prev => [...prev, newTrade.id]);
     setNotifications(prev => [
       {
         id: `notif_${Date.now()}`,
@@ -203,6 +206,10 @@ export default function App() {
       },
       ...prev
     ]);
+  };
+
+  const handleViewTradeModal = (tradeId: string) => {
+    setUnviewedTradeIds(prev => prev.filter(id => id !== tradeId));
   };
 
   const handleUserLogout = () => {
@@ -217,7 +224,9 @@ export default function App() {
     localStorage.setItem('flowcoin_user_id', loggedInUser.id);
   };
 
-  const runningTradesCount = userTrades.filter(t => t.status === 'RUNNING').length;
+  const runningTradesCount = unviewedTradeIds.length > 0
+    ? unviewedTradeIds.length
+    : userTrades.filter(t => t.status === 'RUNNING').length;
 
   // If in Admin Portal Mode, render full-featured Admin Control Portal
   if (isAdminView) {
@@ -287,6 +296,7 @@ export default function App() {
             trades={userTrades}
             currency={currency}
             onGoToTrade={() => setCurrentTab('trade')}
+            onViewTradeModal={handleViewTradeModal}
           />
         )}
 
@@ -296,6 +306,7 @@ export default function App() {
             currency={currency}
             supportNotice={supportNotice}
             appConfig={appConfig}
+            userTrades={userTrades}
             onOpenDeposit={() => setIsDepositModalOpen(true)}
             onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
             onOpenChangePassword={() => setIsPasswordModalOpen(true)}

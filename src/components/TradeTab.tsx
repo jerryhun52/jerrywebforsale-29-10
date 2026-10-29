@@ -108,7 +108,30 @@ export const TradeTab: React.FC<TradeTabProps> = ({
     return `${currentMeta.symbol}${val.toFixed(4)}`;
   };
 
-  // Handle Trade Execution
+  const [tradeSuccessBanner, setTradeSuccessBanner] = useState<TradeOrder | null>(null);
+
+  // Play client trade sound
+  const playTradeSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+      gain.gain.setValueAtTime(0.01, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {}
+  };
+
+  // Handle Trade Execution - Instant Placement
   const handlePlaceTrade = async (direction: 'UP' | 'DOWN') => {
     if (!user) {
       setTradeErrorModal('Please log in to trade');
@@ -139,7 +162,9 @@ export const TradeTab: React.FC<TradeTabProps> = ({
       if (res.success && res.trade) {
         onRefreshUser();
         onTradePlaced(res.trade);
-        setPlacedTradePopup(res.trade);
+        playTradeSound();
+        setTradeSuccessBanner(res.trade);
+        setTimeout(() => setTradeSuccessBanner(null), 4000);
       } else {
         setTradeErrorModal(res.error || 'Insufficient balance');
       }
@@ -467,160 +492,32 @@ export const TradeTab: React.FC<TradeTabProps> = ({
         </div>
       )}
 
-      {/* SUCCESS POPUP MODAL AFTER BUYING */}
-      {placedTradePopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
-          <div className="w-full max-w-sm rounded-3xl bg-[#0c1322] border border-cyan-500/50 p-6 shadow-2xl text-center space-y-4 animate-scaleUp">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 mx-auto flex items-center justify-center shadow-lg">
-              <Check className="w-9 h-9 stroke-[3]" />
+      {/* SLEEK INSTANT SUCCESS TOAST BANNER */}
+      {tradeSuccessBanner && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-[#0c1322] border border-emerald-500/60 p-3.5 rounded-2xl shadow-2xl animate-scaleUp flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0">
+              <Check className="w-5 h-5 stroke-[3]" />
             </div>
-
             <div>
-              <h3 className="text-xl font-black text-white">Order Placed Successfully!</h3>
-              <p className="text-xs text-slate-300 mt-1">
-                Your option contract is now active in the market.
+              <div className="text-xs font-black text-white flex items-center space-x-1.5">
+                <span>Order Placed!</span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${tradeSuccessBanner.direction === 'UP' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                  {tradeSuccessBanner.direction === 'UP' ? 'BUY UP' : 'BUY DOWN'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                {tradeSuccessBanner.symbol} • {formatNativeAmount(tradeSuccessBanner.marginUsd)} • View live timer in <strong className="text-cyan-400">Orders Tab</strong>
               </p>
             </div>
-
-            <div className="bg-[#080d17] p-4 rounded-2xl border border-slate-800 text-xs space-y-2 text-left font-mono">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Coin Purchased:</span>
-                <span className="font-extrabold text-white">{placedTradePopup.symbol}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-400">Trade Direction:</span>
-                <span className={`font-black ${placedTradePopup.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {placedTradePopup.direction === 'UP' ? '🟢 BUY UP (GREEN)' : '🔴 BUY DOWN (RED)'}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-400">Purchase Time:</span>
-                <span className="text-slate-200">
-                  {new Date().toLocaleTimeString()}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-400">Invested Amount:</span>
-                <span className="font-extrabold text-amber-400">
-                  {formatNativeAmount(placedTradePopup.marginUsd)} ({currentMeta.code})
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-400">Duration Time:</span>
-                <span className="text-cyan-300 font-bold">
-                  {placedTradePopup.durationSeconds} Seconds ({placedTradePopup.profitPercent}% Return)
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                setActiveRunningTrade(placedTradePopup);
-                setCountdownRemaining(placedTradePopup.durationSeconds);
-                setPlacedTradePopup(null);
-              }}
-              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-600/30 transition-all active:scale-95"
-            >
-              Start Live Timer Execution
-            </button>
           </div>
-        </div>
-      )}
 
-      {/* Active Running Trade Modal */}
-      {activeRunningTrade && !placedTradePopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-[#111827] border border-slate-700 p-6 shadow-2xl text-center space-y-4 animate-scaleUp">
-            {!tradeSettlementResult ? (
-              <>
-                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                  </span>
-                  <span>Option Contract In Execution</span>
-                </div>
-
-                <div className="relative flex items-center justify-center my-3">
-                  <div className="w-28 h-28 rounded-full border-4 border-slate-800 flex items-center justify-center relative">
-                    <span className="text-4xl font-black text-white font-mono-numbers">
-                      {countdownRemaining}s
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0f19] p-3 rounded-2xl border border-slate-800 text-xs space-y-1.5 font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Asset:</span>
-                    <span className="font-extrabold text-white">{activeRunningTrade.symbol}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Direction:</span>
-                    <span className={`font-extrabold ${activeRunningTrade.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {activeRunningTrade.direction === 'UP' ? '↑ BUY UP' : '↓ BUY DOWN'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Entry Strike:</span>
-                    <span className="font-mono-numbers text-slate-200">${activeRunningTrade.entryPrice}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Margin Escrow:</span>
-                    <span className="font-mono-numbers text-amber-400">{formatNativeAmount(activeRunningTrade.marginUsd)}</span>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-400">
-                  Auto-settlement will lock closing price upon timer expiry.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col items-center space-y-2">
-                  {tradeSettlementResult.outcome === 'WIN' ? (
-                    <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
-                      <CheckCircle2 className="w-10 h-10" />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/40">
-                      <XCircle className="w-10 h-10" />
-                    </div>
-                  )}
-
-                  <h3 className="text-2xl font-black text-white">
-                    {tradeSettlementResult.outcome === 'WIN' ? 'TRADE WIN' : 'TRADE LOSS'}
-                  </h3>
-
-                  <p className="text-xs text-slate-300">
-                    {tradeSettlementResult.outcome === 'WIN'
-                      ? `Congratulations! Profit payout credited to your balance.`
-                      : `The contract expired out-of-the-money.`}
-                  </p>
-                </div>
-
-                <div className="bg-[#0b0f19] p-4 rounded-2xl border border-slate-800 text-center">
-                  <div className="text-xs text-slate-400">Settlement Payout</div>
-                  <div className={`text-2xl font-black font-mono-numbers mt-1 ${tradeSettlementResult.outcome === 'WIN' ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    {formatNativeAmount(tradeSettlementResult.payout)}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setActiveRunningTrade(null);
-                    setTradeSettlementResult(null);
-                  }}
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-sm transition-all"
-                >
-                  Continue Trading
-                </button>
-              </>
-            )}
-          </div>
+          <button
+            onClick={() => setTradeSuccessBanner(null)}
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

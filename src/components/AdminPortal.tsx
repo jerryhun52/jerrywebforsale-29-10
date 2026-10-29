@@ -325,52 +325,96 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     }
   };
 
-  // Real-Time Registration Notification Sound & Instant User List Refresh Listener
+  const [adminNotificationToast, setAdminNotificationToast] = useState<string | null>(null);
+
+  // Real-time Sound & Notification Listener for Registrations, Trades, and Withdrawals
   useEffect(() => {
-    const handleNewUserRegistration = () => {
+    const handleNewUserRegistration = (e: any) => {
       if (currentAdmin) {
         fetchAllAdminData();
         playRegistrationChime();
+        setAdminNotificationToast(`👤 New Trader Registered: @${e.detail?.username || 'Client'}`);
+        setTimeout(() => setAdminNotificationToast(null), 5000);
+      }
+    };
+
+    const handleNewTrade = (e: any) => {
+      if (currentAdmin) {
+        fetchAllAdminData();
+        playRegistrationChime();
+        setAdminNotificationToast(`📈 New Trade Placed by @${e.detail?.username || 'Trader'}: ${e.detail?.symbol} (${e.detail?.direction})`);
+        setTimeout(() => setAdminNotificationToast(null), 5000);
+      }
+    };
+
+    const handleNewWalletReq = (e: any) => {
+      if (currentAdmin) {
+        fetchAllAdminData();
+        playRegistrationChime();
+        setAdminNotificationToast(`💸 New ${e.detail?.type || 'Withdrawal'} Request: $${e.detail?.amountUsd || '0'} by @${e.detail?.username || 'Trader'}`);
+        setTimeout(() => setAdminNotificationToast(null), 5000);
       }
     };
 
     const handleStorageChange = (e: StorageEvent) => {
       if (
         e.key === 'flowcoin_last_registered_time' ||
+        e.key === 'flowcoin_last_trade_time' ||
+        e.key === 'flowcoin_last_request_time' ||
         e.key === 'flowcoin_persistent_db_v2'
       ) {
         if (currentAdmin) {
           fetchAllAdminData();
-          if (e.key === 'flowcoin_last_registered_time') {
-            playRegistrationChime();
+          playRegistrationChime();
+          if (e.key === 'flowcoin_last_trade_time') {
+            setAdminNotificationToast('📈 New Trade Order Received in Portal!');
+          } else if (e.key === 'flowcoin_last_request_time') {
+            setAdminNotificationToast('💸 New Withdrawal/Deposit Request Pending!');
           }
+          setTimeout(() => setAdminNotificationToast(null), 5000);
         }
       }
     };
 
     window.addEventListener('flowcoin_new_user_registered', handleNewUserRegistration);
+    window.addEventListener('flowcoin_new_trade_placed', handleNewTrade);
+    window.addEventListener('flowcoin_new_wallet_request', handleNewWalletReq);
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
       window.removeEventListener('flowcoin_new_user_registered', handleNewUserRegistration);
+      window.removeEventListener('flowcoin_new_trade_placed', handleNewTrade);
+      window.removeEventListener('flowcoin_new_wallet_request', handleNewWalletReq);
       window.removeEventListener('storage', handleStorageChange);
     };
   }, [currentAdmin?.id]);
 
-  // Real-time polling for new client registration detection
+  // Real-time polling for new client registration, trade, and withdrawal detection
   useEffect(() => {
     if (currentAdmin) {
       const interval = setInterval(() => {
-        api.getAdminUsers(currentAdmin.id).then(latestUsers => {
+        Promise.all([
+          api.getAdminUsers(currentAdmin.id),
+          api.getTrades(undefined, currentAdmin.id),
+          api.getWalletRequests(undefined, currentAdmin.id)
+        ]).then(([latestUsers, latestTrades, latestRequests]) => {
           if (latestUsers && latestUsers.length > users.length) {
             setUsers(latestUsers);
+            playRegistrationChime();
+          }
+          if (latestTrades && latestTrades.length > trades.length) {
+            setTrades(latestTrades);
+            playRegistrationChime();
+          }
+          if (latestRequests && latestRequests.length > requests.length) {
+            setRequests(latestRequests);
             playRegistrationChime();
           }
         }).catch(() => {});
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [currentAdmin?.id, users.length]);
+  }, [currentAdmin?.id, users.length, trades.length, requests.length]);
 
   const handleAdminLogout = () => {
     setCurrentAdmin(null);
@@ -790,6 +834,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
           </div>
         </div>
       </header>
+
+      {/* REAL-TIME NOTIFICATION ALERT BANNER FOR ADMIN */}
+      {adminNotificationToast && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-lg bg-[#0c1322] border-2 border-amber-400 p-3.5 rounded-2xl shadow-2xl animate-scaleUp flex items-center justify-between text-white">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0">
+              <BellRing className="w-5 h-5 animate-bounce" />
+            </div>
+            <div className="text-xs font-black tracking-wide leading-snug">
+              {adminNotificationToast}
+            </div>
+          </div>
+          <button
+            onClick={() => setAdminNotificationToast(null)}
+            className="p-1 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Main Container */}
       <div className="max-w-7xl mx-auto px-4 pt-5 space-y-4">

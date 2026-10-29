@@ -15,7 +15,7 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
-import { User, Currency, CURRENCIES, SupportNotice, AppConfig, WalletRequest } from '../types.ts';
+import { User, Currency, CURRENCIES, SupportNotice, AppConfig, WalletRequest, TradeOrder } from '../types.ts';
 import { api } from '../services/api.ts';
 
 interface AssetsTabProps {
@@ -23,6 +23,7 @@ interface AssetsTabProps {
   currency: Currency;
   supportNotice: SupportNotice;
   appConfig: AppConfig;
+  userTrades?: TradeOrder[];
   onOpenDeposit: () => void;
   onOpenWithdraw: () => void;
   onOpenChangePassword: () => void;
@@ -36,6 +37,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
   currency,
   supportNotice,
   appConfig,
+  userTrades = [],
   onOpenDeposit,
   onOpenWithdraw,
   onOpenChangePassword,
@@ -47,6 +49,17 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [userRequests, setUserRequests] = useState<WalletRequest[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [now, setNow] = useState<number>(Date.now());
+
+  // Live timer tick for active trade countdowns in Assets tab
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const runningTrades = userTrades.filter(t => t.status === 'RUNNING');
 
   const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
   const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
@@ -142,14 +155,44 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
         </div>
 
         {/* Escrow Freeze Amount Card */}
-        <div className="flex items-center justify-between p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 mb-4">
-          <div className="flex items-center space-x-2 text-xs font-semibold text-blue-100">
-            <Clock className="w-4 h-4 text-amber-300" />
-            <span>Freeze Amount (In-Trade):</span>
+        <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 mb-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-xs font-semibold text-blue-100">
+              <Clock className="w-4 h-4 text-amber-300 animate-pulse" />
+              <span>Freeze Amount (In-Trade):</span>
+            </div>
+            <div className="text-sm font-black font-mono-numbers text-amber-300">
+              {formatPrice(user.freezeBalance)}
+            </div>
           </div>
-          <div className="text-sm font-black font-mono-numbers text-white">
-            {formatPrice(user.freezeBalance)}
-          </div>
+
+          {/* Active Trades Live Reason & Remaining Seconds */}
+          {runningTrades.length > 0 ? (
+            <div className="pt-2 border-t border-white/15 text-xs space-y-1.5">
+              {runningTrades.map(t => {
+                const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt).getTime() + (t.durationSeconds || 60) * 1000;
+                const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+                return (
+                  <div key={t.id} className="bg-black/25 p-2 rounded-xl text-[11px] flex items-center justify-between">
+                    <div className="text-blue-100 leading-tight">
+                      <span className="font-extrabold text-amber-300">{formatPrice(t.marginUsd)}</span> locked for{' '}
+                      <span className="font-bold text-white">{t.symbol}</span> ({t.direction === 'UP' ? 'BUY UP' : 'BUY DOWN'})
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/25 text-cyan-200 border border-cyan-400/40 text-[10px] font-mono font-bold shrink-0 ml-2">
+                      ⏱️ {secondsLeft}s left
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="text-[10px] text-blue-200/90 font-mono pt-0.5">
+                Reason: Trade in progress. Amount automatically releases upon expiry.
+              </div>
+            </div>
+          ) : (
+            <div className="text-[10px] text-blue-200/70 pt-1 border-t border-white/10 font-mono">
+              Reason: No active running trades.
+            </div>
+          )}
         </div>
 
         {/* Credit Score & Account Status */}

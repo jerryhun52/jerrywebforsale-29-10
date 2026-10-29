@@ -6,18 +6,38 @@ interface OrdersTabProps {
   trades: TradeOrder[];
   currency: Currency;
   onGoToTrade: () => void;
+  onViewTradeModal?: (tradeId: string) => void;
 }
 
 export const OrdersTab: React.FC<OrdersTabProps> = ({
   trades,
   currency,
-  onGoToTrade
+  onGoToTrade,
+  onViewTradeModal
 }) => {
   const [filter, setFilter] = useState<'all' | 'running' | 'settled'>('all');
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<TradeOrder | null>(null);
 
-  const currentMeta = CURRENCIES[currency] || CURRENCIES.USD;
-  const rate = currentMeta.rate;
+  const [now, setNow] = useState<number>(Date.now());
+
+  // Live timer tick every second for running orders
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-settle any running trade that reaches 0s
+  useEffect(() => {
+    runningTrades.forEach(t => {
+      const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt).getTime() + (t.durationSeconds || 60) * 1000;
+      const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+      if (secondsLeft <= 0) {
+        api.settleTrade(t.id).catch(console.error);
+      }
+    });
+  }, [now, runningTrades]);
 
   const runningTrades = useMemo(() => trades.filter(t => t.status === 'RUNNING'), [trades]);
   const settledTrades = useMemo(() => trades.filter(t => t.status === 'SETTLED'), [trades]);
@@ -116,35 +136,43 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
             const isWon = order.outcome === 'WIN';
             const isSettled = order.status === 'SETTLED';
 
+            const expiresAtMs = order.expiresAt ? new Date(order.expiresAt).getTime() : new Date(order.createdAt).getTime() + (order.durationSeconds || 60) * 1000;
+            const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
+
             return (
               <div
                 key={order.id}
-                onClick={() => setSelectedOrderDetail(order)}
-                className="rounded-3xl bg-[#111827] hover:bg-[#152033] p-4 border border-slate-800 shadow-lg space-y-3 cursor-pointer transition-all active:scale-[0.99] group"
+                onClick={() => {
+                  setSelectedOrderDetail(order);
+                  if (onViewTradeModal) onViewTradeModal(order.id);
+                }}
+                className="rounded-2xl bg-[#111827] hover:bg-[#152033] px-3.5 py-3 border border-slate-800 shadow-md flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] group"
               >
-                {/* Header row */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className={`p-1.5 rounded-lg ${isUp ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                      {isUp ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <div className="text-sm font-black text-white flex items-center space-x-1.5">
-                        <span>{order.symbol}</span>
-                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${isUp ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                          {isUp ? 'BUY UP (GREEN)' : 'BUY DOWN (RED)'}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        {order.durationSeconds}s Duration • +{order.profitPercent}% Profit
-                      </div>
-                    </div>
+                {/* Left: Coin Icon & Main Details in 1 row */}
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className={`p-2 rounded-xl shrink-0 ${isUp ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'}`}>
+                    {isUp ? <ArrowUp className="w-4 h-4 stroke-[2.5]" /> : <ArrowDown className="w-4 h-4 stroke-[2.5]" />}
                   </div>
 
-                  {/* Status Badge */}
+                  <div className="min-w-0">
+                    <div className="flex items-center space-x-1.5 truncate">
+                      <span className="text-xs sm:text-sm font-black text-white">{order.symbol}</span>
+                      <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded shrink-0 ${isUp ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                        {isUp ? 'UP' : 'DOWN'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono-numbers mt-0.5 flex items-center space-x-1">
+                      <span>Invested:</span>
+                      <span className="font-extrabold text-amber-400">{formatPrice(order.marginUsd)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Live Countdown / Status Badge in 1 row */}
+                <div className="flex items-center space-x-2 shrink-0">
                   {isSettled ? (
                     <span
-                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-black ${
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-black ${
                         isWon
                           ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                           : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
@@ -154,44 +182,12 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({
                       <span>{isWon ? `WON (+${formatPrice(order.payoutUsd)})` : 'LOST'}</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-black bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>RUNNING</span>
+                    <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-cyan-950 text-cyan-300 border border-cyan-500/40 animate-pulse font-mono">
+                      <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>⏱️ {secondsLeft}s</span>
                     </span>
                   )}
-                </div>
-
-                {/* Details Grid */}
-                <div className="grid grid-cols-2 gap-2 bg-[#0b0f19] p-2.5 rounded-2xl border border-slate-800/80 text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400">Entry Strike:</span>
-                    <div className="font-extrabold text-white font-mono-numbers">
-                      {formatPrice(order.entryPrice)}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400">{isSettled ? 'Settled Price:' : 'Current Price:'}</span>
-                    <div className="font-extrabold text-white font-mono-numbers">
-                      {formatPrice(order.exitPrice || order.currentPrice || order.entryPrice)}
-                    </div>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-[10px] text-slate-400">Invested Amount:</span>
-                    <div className="font-extrabold text-amber-400 font-mono-numbers">
-                      {formatPrice(order.marginUsd)}
-                    </div>
-                  </div>
-                  <div className="mt-1">
-                    <span className="text-[10px] text-slate-400">Total Payout:</span>
-                    <div className={`font-black font-mono-numbers ${isSettled && isWon ? 'text-emerald-400' : 'text-slate-300'}`}>
-                      {isSettled ? formatPrice(order.payoutUsd) : `Est: ${formatPrice(order.marginUsd * (1 + order.profitPercent / 100))}`}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
-                  <span>Tap to view order contract detail window</span>
-                  <Info className="w-3 h-3 text-cyan-400" />
+                  <Info className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 transition-colors" />
                 </div>
               </div>
             );
