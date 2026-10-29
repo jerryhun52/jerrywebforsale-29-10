@@ -23,8 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAssets,
   unreadCount = 1
 }) => {
-  const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
-  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
+  const activeCurrencyCode = (user?.nativeCurrency === 'USD') ? 'USD' : 'INR';
+  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.INR;
 
   const handleCurrencyClick = () => {
     if (user) {

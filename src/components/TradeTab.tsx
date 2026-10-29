@@ -23,11 +23,9 @@ interface DurationOption {
 }
 
 const DURATION_OPTIONS: DurationOption[] = [
-  { seconds: 30, label: '30s', yieldPercent: 20, tag: 'TURBO' },
-  { seconds: 60, label: '60s', yieldPercent: 20, tag: 'STANDARD' },
-  { seconds: 120, label: '120s', yieldPercent: 40, tag: 'HIGH YIELD' },
-  { seconds: 180, label: '180s', yieldPercent: 60, tag: 'EXTENDED' },
-  { seconds: 300, label: '300s', yieldPercent: 80, tag: 'MAX YIELD' }
+  { seconds: 60, label: '60s', yieldPercent: 20, tag: '20% RETURN' },
+  { seconds: 120, label: '120s', yieldPercent: 30, tag: '30% RETURN' },
+  { seconds: 180, label: '180s', yieldPercent: 50, tag: '50% RETURN' }
 ];
 
 export const TradeTab: React.FC<TradeTabProps> = ({
@@ -44,7 +42,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
   const [timeframe, setTimeframe] = useState('1m');
   const [candles, setCandles] = useState<Candlestick[]>([]);
   const [amountInput, setAmountInput] = useState<string>('50');
-  const [selectedDuration, setSelectedDuration] = useState<DurationOption>(DURATION_OPTIONS[1]); // 60s
+  const [selectedDuration, setSelectedDuration] = useState<DurationOption>(DURATION_OPTIONS[0]); // 60s
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Modals & Popups
@@ -374,7 +372,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
               {/* Duration Cards */}
               <div className="grid grid-cols-3 gap-2">
-                {DURATION_OPTIONS.slice(1, 4).map(opt => {
+                {DURATION_OPTIONS.map(opt => {
                   const isSelected = selectedDuration.seconds === opt.seconds;
                   return (
                     <div
@@ -387,7 +385,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                       }`}
                     >
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                        {opt.tag} - {opt.yieldPercent}%
+                        {opt.tag}
                       </div>
                       <div className="text-lg font-black text-white font-mono-numbers my-1">
                         {opt.label}
@@ -398,23 +396,6 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                     </div>
                   );
                 })}
-              </div>
-
-              {/* Quick toggle for 30s and 300s */}
-              <div className="flex items-center justify-center space-x-3 text-[11px] text-slate-400 pt-1">
-                <button
-                  onClick={() => setSelectedDuration(DURATION_OPTIONS[0])}
-                  className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 30 ? 'font-bold text-emerald-400 underline' : ''}`}
-                >
-                  Turbo 30s (20%)
-                </button>
-                <span>•</span>
-                <button
-                  onClick={() => setSelectedDuration(DURATION_OPTIONS[4])}
-                  className={`hover:text-emerald-400 transition-colors ${selectedDuration.seconds === 300 ? 'font-bold text-emerald-400 underline' : ''}`}
-                >
-                  Max Yield 300s (80%)
-                </button>
               </div>
             </div>
 
@@ -533,7 +514,7 @@ export const TradeTab: React.FC<TradeTabProps> = ({
                 {placedTradePopup.symbol} Trade Active
               </h3>
               <p className="text-xs text-slate-300 mt-1">
-                Aapne <strong className="text-white">{placedTradePopup.symbol}</strong> py <strong className={placedTradePopup.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}>{placedTradePopup.direction === 'UP' ? 'BUY UP (Green)' : 'BUY DOWN (Red)'}</strong> contract enter kr lia hy.
+                You have entered a <strong className="text-white">{placedTradePopup.symbol}</strong> <strong className={placedTradePopup.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}>{placedTradePopup.direction === 'UP' ? 'BUY UP (Green)' : 'BUY DOWN (Red)'}</strong> contract.
               </p>
             </div>
 

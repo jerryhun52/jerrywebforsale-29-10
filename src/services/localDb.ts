@@ -722,10 +722,9 @@ export const localDb = {
     if (!user) return { error: 'User not found' };
 
     if (req.type === 'WITHDRAWAL') {
-      const amount = req.amountUsd || 0;
-      if (user.balance < amount) return { error: 'Insufficient balance' };
-      user.balance = +(user.balance - amount).toFixed(2);
-      user.freezeBalance = +(user.freezeBalance + amount).toFixed(2);
+      const amount = req.amountNative !== undefined && req.amountNative > 0 ? req.amountNative : (req.amountUsd || 0);
+      if (user.balance < amount) return { error: `Insufficient available balance! Max available is ${user.balance}.` };
+      user.balance = Math.max(0, +(user.balance - amount).toFixed(2));
     }
 
     const newReq: WalletRequest = {
@@ -733,10 +732,10 @@ export const localDb = {
       userId: user.id,
       username: user.username,
       type: req.type || 'DEPOSIT',
-      amountUsd: req.amountUsd || 0,
-      amountNative: req.amountNative || 0,
+      amountUsd: req.amountUsd || req.amountNative || 0,
+      amountNative: req.amountNative || req.amountUsd || 0,
       currency: user.nativeCurrency,
-      network: req.network || 'USDT (TRC20)',
+      network: req.network || 'Bank Account',
       addressOrAccount: req.addressOrAccount || '',
       status: 'PENDING',
       remarks: 'Pending review',
@@ -745,7 +744,7 @@ export const localDb = {
 
     db.walletRequests.unshift(newReq);
     saveDb(db);
-    return { success: true, request: newReq, balance: user.balance, freezeBalance: user.freezeBalance };
+    return { success: true, request: newReq, user, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
   handleWalletAction(id: string, action: 'APPROVE' | 'REJECT', remarks?: string): any {
@@ -755,25 +754,24 @@ export const localDb = {
     const user = db.users.find(u => u.id === req.userId);
     if (!user) return { error: 'User not found' };
 
+    const amount = req.amountNative || req.amountUsd || 0;
+
     if (action === 'APPROVE') {
       req.status = 'APPROVED';
       req.remarks = remarks || 'Approved by Administrator';
       if (req.type === 'DEPOSIT') {
-        user.balance = +(user.balance + req.amountUsd).toFixed(2);
-      } else if (req.type === 'WITHDRAWAL') {
-        user.freezeBalance = Math.max(0, +(user.freezeBalance - req.amountUsd).toFixed(2));
+        user.balance = +(user.balance + amount).toFixed(2);
       }
     } else {
       req.status = 'REJECTED';
       req.remarks = remarks || 'Rejected by Administrator';
       if (req.type === 'WITHDRAWAL') {
-        user.freezeBalance = Math.max(0, +(user.freezeBalance - req.amountUsd).toFixed(2));
-        user.balance = +(user.balance + req.amountUsd).toFixed(2);
+        user.balance = +(user.balance + amount).toFixed(2);
       }
     }
 
     saveDb(db);
-    return { success: true, request: req, balance: user.balance, freezeBalance: user.freezeBalance };
+    return { success: true, request: req, user, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
   getConfig(): { config: AppConfig; notice: SupportNotice } {

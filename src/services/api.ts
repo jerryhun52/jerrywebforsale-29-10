@@ -1195,6 +1195,35 @@ export const api = {
       addressOrAccount: payload.addressOrAccount
     });
 
+    if (res.success && res.user) {
+      // 1. Sync updated balance to Firestore
+      if (firestoreDb) {
+        try {
+          setDoc(doc(firestoreDb, 'users', payload.userId), {
+            balance: res.user.balance
+          }, { merge: true }).catch(console.warn);
+        } catch {}
+      }
+
+      // 2. Sync updated balance to Express backend server
+      try {
+        fetch(`/api/admin/users/${payload.userId}/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: res.user.balance })
+        }).catch(console.warn);
+      } catch {}
+
+      // 3. Dispatch real-time balance update
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
+          localStorage.setItem('flowcoin_current_user', JSON.stringify(res.user));
+          localStorage.setItem('flowcoin_last_balance_update', Date.now().toString());
+        } catch {}
+      }
+    }
+
     if (res.success && res.request && isSupabaseConfigured && supabase) {
       try {
         await supabase.from('withdrawal_requests').insert({
@@ -1241,6 +1270,31 @@ export const api = {
 
   async handleWalletRequestAction(requestId: string, action: 'APPROVE' | 'REJECT', remarks?: string): Promise<any> {
     const res = localDb.handleWalletAction(requestId, action, remarks);
+
+    if (res.success && res.user) {
+      if (firestoreDb) {
+        try {
+          setDoc(doc(firestoreDb, 'users', res.user.id), {
+            balance: res.user.balance
+          }, { merge: true }).catch(console.warn);
+        } catch {}
+      }
+
+      try {
+        fetch(`/api/admin/users/${res.user.id}/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: res.user.balance })
+        }).catch(console.warn);
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
+          localStorage.setItem('flowcoin_current_user', JSON.stringify(res.user));
+        } catch {}
+      }
+    }
 
     if (res.success && isSupabaseConfigured && supabase) {
       try {

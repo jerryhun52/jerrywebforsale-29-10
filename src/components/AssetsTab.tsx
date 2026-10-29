@@ -61,8 +61,8 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 
   const runningTrades = userTrades.filter(t => t.status === 'RUNNING');
 
-  const activeCurrencyCode = user?.nativeCurrency || currency || 'USD';
-  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.USD;
+  const activeCurrencyCode = (user?.nativeCurrency === 'USD') ? 'USD' : 'INR';
+  const currentMeta = CURRENCIES[activeCurrencyCode] || CURRENCIES.INR;
   const rate = currentMeta.rate;
 
   const formatPrice = (amount: number) => {
@@ -155,7 +155,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
             </span>
           </div>
           <div className="text-3xl sm:text-4xl font-black font-mono-numbers tracking-tight">
-            {formatPrice(+(Number(user.balance || 0) + Number(user.freezeBalance || 0)).toFixed(2))}
+            {formatPrice(user.balance)}
           </div>
         </div>
 
@@ -177,15 +177,26 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
 
           {/* Freeze (Locked in active trades) */}
           <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15">
-            <div className="text-[11px] font-semibold text-amber-200 mb-1 flex items-center space-x-1">
-              <Clock className="w-3 h-3 text-amber-300 animate-pulse" />
-              <span>Freeze (In-Trade)</span>
+            <div className="text-[11px] font-semibold text-amber-200 mb-1 flex items-center justify-between">
+              <div className="flex items-center space-x-1">
+                <Clock className="w-3 h-3 text-amber-300 animate-pulse" />
+                <span>Freeze (In-Trade)</span>
+              </div>
+              {runningTrades.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[9px] font-mono font-black animate-pulse">
+                  ⏱️ {Math.max(0, Math.ceil(((runningTrades[0].expiresAt ? new Date(runningTrades[0].expiresAt).getTime() : new Date(runningTrades[0].createdAt || Date.now()).getTime() + (runningTrades[0].durationSeconds || 60) * 1000) - now) / 1000))}s
+                </span>
+              )}
             </div>
             <div className="text-lg font-black font-mono-numbers text-amber-300">
               {formatPrice(user.freezeBalance)}
             </div>
             <div className="text-[9px] text-amber-200/80 mt-0.5">
-              {user.freezeBalance > 0 ? 'Locked in active trades' : 'No active margin locked'}
+              {user.freezeBalance > 0
+                ? (runningTrades.length > 0
+                    ? `${runningTrades.length} active • Unlocks on expiry`
+                    : 'Locked in active trades')
+                : 'No active margin locked'}
             </div>
           </div>
         </div>

@@ -29,10 +29,11 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentMeta = CURRENCIES[currency] || CURRENCIES.USD;
+  const effectiveCurrency: Currency = (user.nativeCurrency === 'USD') ? 'USD' : 'INR';
+  const currentMeta = CURRENCIES[effectiveCurrency] || CURRENCIES.INR;
   const rate = currentMeta.rate;
   const numNative = parseFloat(amountNative) || 0;
-  const equivalentUsd = +(numNative / rate).toFixed(2);
+  const equivalentUsd = +(numNative / (rate || 1)).toFixed(2);
 
   const depositAddresses: Record<string, { address: string; info: string }> = {
     'USDT (TRC20)': {

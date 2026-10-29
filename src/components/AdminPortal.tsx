@@ -1726,16 +1726,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                             <div className="text-[10px] text-slate-400 font-mono">{req.id}</div>
                           </td>
 
-                          <td className="py-2.5 px-3 font-black text-emerald-400 text-sm">
-                            ${req.amountUsd.toFixed(2)} USD
+                          <td className="py-2.5 px-3 font-black text-emerald-400 text-sm whitespace-nowrap">
+                            {req.currency === 'USD' ? '$' : '₹'}{Number(req.amountNative || req.amountUsd || 0).toLocaleString()} {req.currency || 'INR'}
                           </td>
 
-                          <td className="py-2.5 px-3 font-sans text-slate-300">
+                          <td className="py-2.5 px-3 font-sans text-slate-300 whitespace-nowrap">
                             {req.network}
                           </td>
 
-                          <td className="py-2.5 px-3 text-slate-400 text-[11px] max-w-xs truncate">
-                            {req.addressOrAccount}
+                          <td className="py-2.5 px-3 text-slate-300 text-[11px] max-w-sm">
+                            <div className="font-mono bg-slate-900/60 p-1.5 rounded-lg border border-slate-800 break-words">
+                              {req.addressOrAccount}
+                            </div>
                           </td>
 
                           <td className="py-2.5 px-3 font-sans">
