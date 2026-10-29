@@ -751,14 +751,36 @@ export const localDb = {
     return { success: true, trade, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
-  getTrades(userId?: string): TradeOrder[] {
+  getTrades(userId?: string, adminId?: string): TradeOrder[] {
     const db = getDb();
     if (userId) return db.trades.filter(t => t.userId === userId);
+    if (adminId) {
+      const admin = db.adminAccounts.find(
+        a => a.id === adminId || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(adminId).toLowerCase()
+      );
+      if (admin && admin.role === 'SUB_ADMIN') {
+        const scopedUsers = this.getUsers(adminId);
+        const scopedUserIds = new Set(scopedUsers.map(u => u.id));
+        return db.trades.filter(t => scopedUserIds.has(t.userId));
+      }
+    }
     return db.trades;
   },
 
-  getWalletRequests(): WalletRequest[] {
-    return getDb().walletRequests;
+  getWalletRequests(userId?: string, adminId?: string): WalletRequest[] {
+    const db = getDb();
+    if (userId) return db.walletRequests.filter(w => w.userId === userId);
+    if (adminId) {
+      const admin = db.adminAccounts.find(
+        a => a.id === adminId || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(adminId).toLowerCase()
+      );
+      if (admin && admin.role === 'SUB_ADMIN') {
+        const scopedUsers = this.getUsers(adminId);
+        const scopedUserIds = new Set(scopedUsers.map(u => u.id));
+        return db.walletRequests.filter(w => scopedUserIds.has(w.userId));
+      }
+    }
+    return db.walletRequests;
   },
 
   createWalletRequest(req: Partial<WalletRequest>): any {

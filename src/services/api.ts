@@ -945,8 +945,13 @@ export const api = {
   },
 
   // Trades
-  async getTrades(userId?: string, _adminId?: string): Promise<TradeOrder[]> {
-    return localDb.getTrades(userId);
+  async getTrades(userId?: string, adminId?: string): Promise<TradeOrder[]> {
+    return localDb.getTrades(userId, adminId);
+  },
+
+  // Finance / Wallets
+  async getWalletRequests(userId?: string, adminId?: string): Promise<WalletRequest[]> {
+    return localDb.getWalletRequests(userId, adminId);
   },
 
   async placeTrade(payload: {
@@ -1148,13 +1153,6 @@ export const api = {
     }
 
     return res;
-  },
-
-  // Finance / Wallets
-  async getWalletRequests(userId?: string, _adminId?: string): Promise<WalletRequest[]> {
-    const reqs = localDb.getWalletRequests();
-    if (userId) return reqs.filter(r => r.userId === userId);
-    return reqs;
   },
 
   async createDepositRequest(payload: {

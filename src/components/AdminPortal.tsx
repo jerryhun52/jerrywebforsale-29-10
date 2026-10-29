@@ -342,6 +342,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     let unsubTrades: (() => void) | null = null;
     let unsubRequests: (() => void) | null = null;
 
+    // Helper to verify if a client belongs to the current sub-admin (or if admin is Super/Supreme)
+    const isClientScoped = (userId: string, username?: string) => {
+      if (currentAdmin.role === 'SUPREME_OWNER' || currentAdmin.role === 'SUPER_ADMIN') {
+        return true;
+      }
+      return users.some(
+        u => u.id === userId || (username && u.username.toLowerCase() === username.toLowerCase())
+      );
+    };
+
     // 1. Direct Firestore Sub-second Live Subscription (<1s without refresh)
     if (firestoreDb) {
       let isInitialTrades = true;
@@ -351,7 +361,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         unsubTrades = onSnapshot(collection(firestoreDb, 'trades'), (snapshot) => {
           const updatedTrades: TradeOrder[] = [];
           snapshot.forEach(docSnap => {
-            updatedTrades.push(docSnap.data() as TradeOrder);
+            const t = docSnap.data() as TradeOrder;
+            if (isClientScoped(t.userId, t.username)) {
+              updatedTrades.push(t);
+            }
           });
 
           updatedTrades.sort((a, b) => {
@@ -364,11 +377,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'added') {
                 const newTrade = change.doc.data() as TradeOrder;
-                playRegistrationChime();
-                setAdminNotificationToast(
-                  `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: $${newTrade.marginUsd}`
-                );
-                setTimeout(() => setAdminNotificationToast(null), 6000);
+                if (isClientScoped(newTrade.userId, newTrade.username)) {
+                  playRegistrationChime();
+                  setAdminNotificationToast(
+                    `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: $${newTrade.marginUsd}`
+                  );
+                  setTimeout(() => setAdminNotificationToast(null), 6000);
+                }
               }
             });
           }
@@ -379,7 +394,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         unsubRequests = onSnapshot(collection(firestoreDb, 'walletRequests'), (snapshot) => {
           const updatedReqs: WalletRequest[] = [];
           snapshot.forEach(docSnap => {
-            updatedReqs.push(docSnap.data() as WalletRequest);
+            const r = docSnap.data() as WalletRequest;
+            if (isClientScoped(r.userId, r.username)) {
+              updatedReqs.push(r);
+            }
           });
 
           updatedReqs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -388,17 +406,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'added') {
                 const newReq = change.doc.data() as WalletRequest;
-                playRegistrationChime();
-                if (newReq.type === 'WITHDRAWAL') {
-                  setAdminNotificationToast(
-                    `💸 NEW WITHDRAWAL REQUEST: $${newReq.amountUsd} (${newReq.amountNative} ${newReq.currency}) applied by @${newReq.username}`
-                  );
-                } else {
-                  setAdminNotificationToast(
-                    `💰 NEW DEPOSIT PROOF SUBMITTED: $${newReq.amountUsd} by @${newReq.username}`
-                  );
+                if (isClientScoped(newReq.userId, newReq.username)) {
+                  playRegistrationChime();
+                  const meta = CURRENCIES[newReq.currency || 'INR'] || CURRENCIES.INR;
+                  const nativeAmt = newReq.amountNative !== undefined && newReq.amountNative > 0 ? newReq.amountNative : (newReq.amountUsd || 0);
+                  const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
+
+                  if (newReq.type === 'WITHDRAWAL') {
+                    setAdminNotificationToast(
+                      `💸 NEW WITHDRAWAL REQUEST: ${formattedNative} (${newReq.amountUsd ? `$${newReq.amountUsd} USD` : ''}) applied by @${newReq.username}`
+                    );
+                  } else {
+                    setAdminNotificationToast(
+                      `💰 NEW DEPOSIT PROOF SUBMITTED: ${formattedNative} by @${newReq.username}`
+                    );
+                  }
+                  setTimeout(() => setAdminNotificationToast(null), 6000);
                 }
-                setTimeout(() => setAdminNotificationToast(null), 6000);
               }
             });
           }
@@ -412,6 +436,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
     // 2. Custom Window Event Handlers (Same-Window / Local Tab)
     const handleNewUserRegistration = (e: any) => {
+      if (e.detail && !isClientScoped(e.detail.id, e.detail.username)) return;
       fetchAllAdminData();
       playRegistrationChime();
       setAdminNotificationToast(`👤 New Trader Registered: @${e.detail?.username || 'Client'}`);
@@ -419,6 +444,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     };
 
     const handleNewTrade = (e: any) => {
+      if (e.detail && !isClientScoped(e.detail.userId, e.detail.username)) return;
       fetchAllAdminData();
       playRegistrationChime();
       setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed $${e.detail?.marginUsd || ''} on ${e.detail?.symbol} (${e.detail?.direction})`);
@@ -426,9 +452,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     };
 
     const handleNewWalletReq = (e: any) => {
+      if (e.detail && !isClientScoped(e.detail.userId, e.detail.username)) return;
       fetchAllAdminData();
       playRegistrationChime();
-      setAdminNotificationToast(`💸 NEW WITHDRAWAL APPLIED: $${e.detail?.amountUsd || '0'} (${e.detail?.amountNative} ${e.detail?.currency || ''}) by @${e.detail?.username || 'Trader'}`);
+      const meta = CURRENCIES[(e.detail?.currency as Currency) || 'INR'] || CURRENCIES.INR;
+      const nativeAmt = e.detail?.amountNative !== undefined && e.detail?.amountNative > 0 ? e.detail?.amountNative : (e.detail?.amountUsd || 0);
+      const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
+      setAdminNotificationToast(`💸 NEW WITHDRAWAL APPLIED: ${formattedNative} by @${e.detail?.username || 'Trader'}`);
       setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
@@ -463,7 +493,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
       window.removeEventListener('flowcoin_new_wallet_request', handleNewWalletReq);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [currentAdmin?.id]);
+  }, [currentAdmin?.id, users]);
 
   const handleAdminLogout = () => {
     setCurrentAdmin(null);
@@ -1775,8 +1805,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                             <div className="text-[10px] text-slate-400 font-mono">{req.id}</div>
                           </td>
 
-                          <td className="py-2.5 px-3 font-black text-emerald-400 text-sm whitespace-nowrap">
-                            {req.currency === 'USD' ? '$' : '₹'}{Number(req.amountNative || req.amountUsd || 0).toLocaleString()} {req.currency || 'INR'}
+                          <td className="py-2.5 px-3 font-sans whitespace-nowrap">
+                            {(() => {
+                              const meta = CURRENCIES[req.currency || 'INR'] || CURRENCIES.INR;
+                              const nativeAmt = req.amountNative !== undefined && req.amountNative > 0 ? req.amountNative : (req.amountUsd || 0);
+                              return (
+                                <div>
+                                  <span className="font-extrabold text-emerald-400 text-sm block">
+                                    {meta.flag} {meta.symbol}{Number(nativeAmt).toLocaleString()} {meta.code}
+                                  </span>
+                                  {meta.code !== 'USD' && req.amountUsd ? (
+                                    <span className="text-[10px] text-slate-400 font-mono block">
+                                      (${req.amountUsd.toLocaleString()} USD)
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           <td className="py-2.5 px-3 font-sans text-slate-300 whitespace-nowrap">
