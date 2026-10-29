@@ -27,16 +27,37 @@ import {
   AppConfig
 } from './types.ts';
 import { api } from './services/api.ts';
-import { X, Bell, CheckCircle2 } from 'lucide-react';
+import { db as firestoreDb } from './services/firebase.ts';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { X, Bell, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
   // Navigation & View
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
   const [isAdminView, setIsAdminView] = useState<boolean>(false);
 
-  // User & Currency
-  const [user, setUser] = useState<User | null>(null);
-  const [currency, setCurrency] = useState<Currency>('USD');
+  // Synchronous User & Currency Rehydration (Prevents reload logout flash)
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const raw = localStorage.getItem('flowcoin_current_user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.id) return parsed;
+      }
+    } catch {}
+    return null;
+  });
+
+  const [currency, setCurrency] = useState<Currency>(() => {
+    try {
+      const raw = localStorage.getItem('flowcoin_current_user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.nativeCurrency) return parsed.nativeCurrency;
+      }
+    } catch {}
+    return 'USD';
+  });
 
   // Market & Trading State
   const [tickers, setTickers] = useState<CoinTicker[]>([]);
@@ -99,7 +120,7 @@ export default function App() {
       window.history.replaceState(null, '', `${window.location.pathname}#home`);
     }
 
-    // 2. Check URL for referral parameter and clean URL so refresh keeps user logged in
+    // 2. Check URL for referral parameter (Clean isolation: recipient NEVER inherits sender's session)
     const href = window.location.href;
     const refMatch = href.match(/[?#&](?:ref|referral|code)=([A-Za-z0-9_]+)/i);
     let referralFromUrl = '';
@@ -111,23 +132,26 @@ export default function App() {
       const targetHash = window.location.hash || '#home';
       window.history.replaceState({}, document.title, window.location.pathname + targetHash);
 
+      // Link isolation: New guest should see register modal cleanly, not an old session
+      setUser(null);
+      localStorage.removeItem('flowcoin_user_id');
+      localStorage.removeItem('flowcoin_current_user');
+      localStorage.removeItem('flowcoin_admin_id');
+      setIsAdminView(false);
+      setAuthModalMode('register');
+      setIsAuthModalOpen(true);
+    } else {
+      // 3. Initial Login Profile Sync on Page Refresh
       const savedUserId = localStorage.getItem('flowcoin_user_id');
-      if (!savedUserId) {
-        setAuthModalMode('register');
-        setIsAdminView(false);
-        setIsAuthModalOpen(true);
+      if (savedUserId) {
+        api.getUserProfile(savedUserId).then(res => {
+          if (res.success && res.user) {
+            setUser(res.user);
+            setCurrency(res.user.nativeCurrency || 'USD');
+            localStorage.setItem('flowcoin_current_user', JSON.stringify(res.user));
+          }
+        }).catch(console.error);
       }
-    }
-
-    // 3. Initial Login Rehydration on Page Refresh
-    const savedUserId = localStorage.getItem('flowcoin_user_id');
-    if (savedUserId) {
-      api.getUserProfile(savedUserId).then(res => {
-        if (res.success && res.user) {
-          setUser(res.user);
-          setCurrency(res.user.nativeCurrency || 'USD');
-        }
-      }).catch(console.error);
     }
 
     // 4. Fetch App Config & Notice
@@ -190,21 +214,66 @@ export default function App() {
       refreshUserData();
       const interval = setInterval(refreshUserData, 3000);
 
+      // 1. Cross-Device Real-Time Firestore Document Snapshot Listener
+      let unsubFirestore: (() => void) | null = null;
+      if (firestoreDb && user.id) {
+        try {
+          unsubFirestore = onSnapshot(doc(firestoreDb, 'users', user.id), (docSnap) => {
+            if (docSnap.exists()) {
+              const cloudData = docSnap.data();
+              setUser(prev => {
+                if (!prev) return null;
+                const updated: User = {
+                  ...prev,
+                  balance: cloudData.balance !== undefined ? Number(cloudData.balance) : prev.balance,
+                  freezeBalance: cloudData.freezeBalance !== undefined ? Number(cloudData.freezeBalance) : prev.freezeBalance,
+                  status: cloudData.status || prev.status,
+                  freezeReason: cloudData.freezeReason !== undefined ? cloudData.freezeReason : prev.freezeReason,
+                  creditScore: cloudData.creditScore !== undefined ? Number(cloudData.creditScore) : prev.creditScore,
+                  tradeMode: cloudData.tradeMode || prev.tradeMode
+                };
+                try {
+                  localStorage.setItem('flowcoin_current_user', JSON.stringify(updated));
+                } catch {}
+                return updated;
+              });
+            }
+          }, (err) => {
+            console.warn('Firestore onSnapshot listener notice:', err);
+          });
+        } catch (e) {
+          console.warn('Could not attach Firestore onSnapshot:', e);
+        }
+      }
+
+      // 2. Same-Window Event Broadcast Listener
       const handleBalanceEvent = (e: any) => {
         if (e.detail && e.detail.id === user.id) {
           setUser(prev => {
             if (!prev) return null;
-            return {
+            const updated = {
               ...prev,
               balance: e.detail.balance !== undefined ? Number(e.detail.balance) : prev.balance,
-              freezeBalance: e.detail.freezeBalance !== undefined ? Number(e.detail.freezeBalance) : prev.freezeBalance
+              freezeBalance: e.detail.freezeBalance !== undefined ? Number(e.detail.freezeBalance) : prev.freezeBalance,
+              status: e.detail.status || prev.status,
+              freezeReason: e.detail.freezeReason !== undefined ? e.detail.freezeReason : prev.freezeReason,
+              creditScore: e.detail.creditScore !== undefined ? Number(e.detail.creditScore) : prev.creditScore,
+              tradeMode: e.detail.tradeMode || prev.tradeMode
             };
+            try {
+              localStorage.setItem('flowcoin_current_user', JSON.stringify(updated));
+            } catch {}
+            return updated;
           });
         }
       };
 
       const handleStorage = (e: StorageEvent) => {
-        if (e.key === 'flowcoin_persistent_db_v2') {
+        if (
+          e.key === 'flowcoin_persistent_db_v2' ||
+          e.key === 'flowcoin_last_balance_update' ||
+          e.key === 'flowcoin_last_freeze_update'
+        ) {
           refreshUserData();
         }
       };
@@ -214,6 +283,7 @@ export default function App() {
 
       return () => {
         clearInterval(interval);
+        if (unsubFirestore) unsubFirestore();
         window.removeEventListener('flowcoin_user_balance_updated', handleBalanceEvent);
         window.removeEventListener('storage', handleStorage);
       };
@@ -236,7 +306,11 @@ export default function App() {
       const margin = Number(newTrade.marginUsd) || 0;
       const newBal = Math.max(0, +(prev.balance - margin).toFixed(2));
       const newFreeze = +((prev.freezeBalance || 0) + margin).toFixed(2);
-      return { ...prev, balance: newBal, freezeBalance: newFreeze };
+      const updated = { ...prev, balance: newBal, freezeBalance: newFreeze };
+      try {
+        localStorage.setItem('flowcoin_current_user', JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
     setNotifications(prev => [
       {
@@ -264,11 +338,12 @@ export default function App() {
           password: user.password || '123123',
           displayName: user.displayName || user.username
         });
-        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 4)));
+        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 2)));
       } catch {}
     }
     setUser(null);
     localStorage.removeItem('flowcoin_user_id');
+    localStorage.removeItem('flowcoin_current_user');
     setAuthModalMode('login');
     setIsAuthModalOpen(true);
   };
@@ -277,6 +352,7 @@ export default function App() {
     setUser(loggedInUser);
     setCurrency(loggedInUser.nativeCurrency || 'USD');
     localStorage.setItem('flowcoin_user_id', loggedInUser.id);
+    localStorage.setItem('flowcoin_current_user', JSON.stringify(loggedInUser));
     if (loggedInUser.password) {
       try {
         const raw = localStorage.getItem('flowcoin_saved_accounts');
@@ -287,7 +363,7 @@ export default function App() {
           password: loggedInUser.password,
           displayName: loggedInUser.displayName || loggedInUser.username
         });
-        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 4)));
+        localStorage.setItem('flowcoin_saved_accounts', JSON.stringify(list.slice(0, 2)));
       } catch {}
     }
     navigateTab('home');
@@ -329,6 +405,29 @@ export default function App() {
         isAdminView={isAdminView}
         unreadCount={notifications.length}
       />
+
+      {/* Real-time Account Frozen Security Banner */}
+      {user && user.status === 'Frozen' && (
+        <div className="w-full max-w-md md:max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto px-3.5 pt-2">
+          <div className="p-3.5 rounded-2xl bg-rose-950/90 border-2 border-rose-500 text-rose-200 text-xs flex items-center justify-between shadow-2xl animate-scaleUp">
+            <div className="flex items-center space-x-2.5">
+              <span className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 font-black flex items-center justify-center text-sm shrink-0">⚠️</span>
+              <div>
+                <span className="font-extrabold text-white block">Trader Account Frozen</span>
+                <span className="text-[11px] text-rose-300">
+                  {user.freezeReason ? `Reason: ${user.freezeReason}` : 'Account trading & withdrawals locked for audit review.'} Contact Customer Support Desk.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => navigateTab('assets')}
+              className="px-3.5 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-black text-xs shrink-0 ml-2 shadow-md shadow-rose-500/30 transition-all active:scale-95"
+            >
+              Contact Support
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Responsive Container */}
       <main className="flex-1 w-full max-w-md md:max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto px-3.5 pt-3 transition-all">

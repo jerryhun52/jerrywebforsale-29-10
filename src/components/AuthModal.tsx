@@ -361,12 +361,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
       if (!referralCode.trim()) {
-        setReferralCode('ROOT786');
+        setError('Invitation code is required! Registration is strictly by administrator referral code only.');
+        return;
       }
 
       setLoading(true);
       try {
-        const cleanRef = cleanMobileInput(referralCode || 'ROOT786').toUpperCase();
+        const cleanRef = cleanMobileInput(referralCode).toUpperCase();
         const res = await api.registerUser({
           username: cleanUser,
           fullName: cleanMobileInput(fullName),

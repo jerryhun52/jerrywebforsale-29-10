@@ -139,7 +139,37 @@ export const api = {
     return candles;
   },
 
-  // Client & Admin Unified Auth (Direct Supabase client queries, Zero REST fetch)
+  // Sync all admins across Firestore, Backend, and localDb
+  async syncAllAdmins(): Promise<void> {
+    if (firestoreDb) {
+      try {
+        const snap = await getDocs(collection(firestoreDb, 'admins'));
+        snap.forEach(d => {
+          const adm = d.data() as AdminAccount;
+          if (adm && adm.id && adm.username) {
+            localDb.addAdmin(adm);
+          }
+        });
+      } catch (err) {
+        console.warn('Firestore admins sync warning:', err);
+      }
+    }
+    try {
+      const resp = await fetch('/api/admin/subadmins?adminId=admin_main_002');
+      if (resp.ok) {
+        const list = await resp.json();
+        if (Array.isArray(list)) {
+          list.forEach((adm: AdminAccount) => {
+            if (adm && adm.id && adm.username) {
+              localDb.addAdmin(adm);
+            }
+          });
+        }
+      }
+    } catch {}
+  },
+
+  // Client & Admin Unified Auth (Cross-Device: localDb -> Backend Server -> Firestore -> Supabase)
   async loginUser(username: string, password: string): Promise<{
     success: boolean;
     user?: User;
@@ -147,16 +177,73 @@ export const api = {
     admin?: AdminAccount;
     error?: string;
   }> {
-    const cleanUser = username.trim();
-    const cleanPass = password.trim();
+    const cleanUser = cleanMobileInput(username || '');
+    const cleanPass = cleanMobileInput(password || '');
 
-    // 1. Check localDb first for initial super admin accounts or local users
+    // 1. Check localDb first
     const localRes = localDb.login(cleanUser, cleanPass);
     if (localRes.success) {
       return localRes;
     }
 
-    // 2. Direct Supabase Client Query
+    // 2. Try Backend Server API (/api/auth/login)
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUser, password: cleanPass })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.isAdmin && data.admin) {
+          localDb.addAdmin(data.admin);
+          return { success: true, isAdmin: true, admin: data.admin };
+        }
+        if (data.user) {
+          localDb.addUser(data.user);
+          return { success: true, isAdmin: false, user: data.user };
+        }
+      }
+    } catch {}
+
+    // 3. Try Firestore admins and users (Cross-Device mobile to PC sync)
+    if (firestoreDb) {
+      try {
+        const admSnap = await getDocs(collection(firestoreDb, 'admins'));
+        let matchedAdm: AdminAccount | null = null;
+        admSnap.forEach(d => {
+          const a = d.data() as AdminAccount;
+          if (a && cleanMobileInput(a.username).toLowerCase() === cleanUser.toLowerCase()) {
+            if (isPasswordEquivalent(cleanPass, a.password || '')) {
+              matchedAdm = a;
+            }
+          }
+        });
+        if (matchedAdm) {
+          localDb.addAdmin(matchedAdm);
+          return { success: true, isAdmin: true, admin: matchedAdm };
+        }
+
+        const usrSnap = await getDocs(collection(firestoreDb, 'users'));
+        let matchedUsr: User | null = null;
+        usrSnap.forEach(d => {
+          const u = d.data() as User;
+          if (u && cleanMobileInput(u.username).toLowerCase() === cleanUser.toLowerCase()) {
+            if (isPasswordEquivalent(cleanPass, (u as any).password || '')) {
+              matchedUsr = u;
+            }
+          }
+        });
+        if (matchedUsr) {
+          localDb.addUser(matchedUsr);
+          return { success: true, isAdmin: false, user: matchedUsr };
+        }
+      } catch (e) {
+        console.warn('Firestore login check warning:', e);
+      }
+    }
+
+    // 4. Supabase Client Query
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: userRows, error } = await supabase
@@ -167,32 +254,27 @@ export const api = {
 
         if (!error && userRows && userRows.length > 0) {
           const row = userRows[0];
-
-          // Check password
           if (row.password_hash && row.password_hash !== cleanPass) {
             return { success: false, error: 'Invalid password. Please check capitalization.' };
           }
-
           if (row.status === 'Suspended' || row.status === 'Frozen') {
             return { success: false, error: `Account is ${row.status}. Contact Support Desk.` };
           }
-
-          // Check if admin role
           if (['SUPREME_OWNER', 'SUPER_ADMIN', 'SUB_ADMIN', 'ADMIN'].includes(row.role)) {
             const adminObj: AdminAccount = {
               id: row.id,
               username: row.username,
               displayName: row.display_name || row.username,
               role: row.role as any,
-              referralCode: row.referral_code_used || 'ROOT786',
+              referralCode: row.referral_code_used || 'SUPER786',
               permissions: ['manage_users', 'manage_trades', 'manage_finance', 'manage_notices', 'manage_subadmins'],
               loginHistory: [],
               createdAt: row.created_at
             };
+            localDb.addAdmin(adminObj);
             return { success: true, isAdmin: true, admin: adminObj };
           }
 
-          // Fetch real-time balances from public.balances
           const { data: balanceRows } = await supabase
             .from('balances')
             .select('*')
@@ -221,12 +303,11 @@ export const api = {
           return { success: true, isAdmin: false, user: userObj };
         }
       } catch (err) {
-        console.warn('Supabase login check failed, falling back to localDb:', err);
+        console.warn('Supabase login check warning:', err);
       }
     }
 
-    // 2. Local fallback
-    return localDb.login(username, password);
+    return { success: false, error: localRes.error || 'Account not found. Please verify your username.' };
   },
 
   async registerUser(data: {
@@ -236,10 +317,10 @@ export const api = {
     referralCode?: string;
     nativeCurrency?: string;
   }): Promise<{ success: boolean; user?: User; error?: string }> {
-    const cleanUser = (data.username || '').trim();
-    const cleanPass = (data.password || '123123').trim();
-    const cleanFullName = (data.fullName || cleanUser).trim();
-    const cleanRef = (data.referralCode || 'ROOT786').trim().toUpperCase();
+    const cleanUser = cleanMobileInput(data.username || '');
+    const cleanPass = cleanMobileInput(data.password || '');
+    const cleanFullName = cleanMobileInput(data.fullName || cleanUser);
+    const cleanRef = cleanMobileInput(data.referralCode || '').toUpperCase();
     const currency = data.nativeCurrency || 'USD';
 
     if (!cleanUser || cleanUser.length < 3) {
@@ -248,8 +329,19 @@ export const api = {
     if (cleanPass.length < 6) {
       return { success: false, error: 'Password must be at least 6 characters.' };
     }
+    if (!cleanRef) {
+      return {
+        success: false,
+        error: 'Invitation code is required! Registration is strictly by administrator referral code only.'
+      };
+    }
 
-    // 1. Primary Registration in localDb (Resolves referredByAdminId accurately)
+    // Sync all admins across backend and Firestore before validating
+    try {
+      await this.syncAllAdmins();
+    } catch {}
+
+    // 1. Primary Registration in localDb (Strict matching against adminAccounts)
     const localRes = localDb.register({
       username: cleanUser,
       fullName: cleanFullName,
@@ -259,7 +351,7 @@ export const api = {
     });
 
     if (!localRes.success || !localRes.user) {
-      return { success: false, error: localRes.error || 'Username already registered.' };
+      return { success: false, error: localRes.error || 'Registration failed.' };
     }
 
     const newUser = localRes.user;
@@ -613,9 +705,19 @@ export const api = {
         }
       }
 
+      // Sync to Express Backend Server
+      try {
+        fetch(`/api/admin/users/${userId}/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, amountUsd })
+        }).catch(console.warn);
+      } catch {}
+
       // Broadcast real-time balance update event
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
+        localStorage.setItem('flowcoin_last_balance_update', Date.now().toString());
       }
     }
     return res;
@@ -629,28 +731,81 @@ export const api = {
     const res = localDb.updateTradeMode(userId, tradeMode);
     if (res.success && firestoreDb) {
       try {
-        await updateDoc(doc(firestoreDb, 'users', userId), { tradeMode });
-      } catch {
-        // Handled
-      }
+        await setDoc(doc(firestoreDb, 'users', userId), { tradeMode }, { merge: true });
+      } catch {}
     }
+    try {
+      fetch(`/api/admin/users/${userId}/trade-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tradeMode })
+      }).catch(console.warn);
+    } catch {}
     return res;
   },
 
   async updateUserStatus(userId: string, status: UserStatus): Promise<any> {
-    return localDb.freezeUser(userId, status === 'Active' ? 'reactivate' : 'freeze');
+    return this.freezeUserAccount(userId, status === 'Active' ? 'reactivate' : 'freeze');
   },
 
   async updateCreditScore(userId: string, creditScore: number): Promise<any> {
-    return localDb.updateCreditScore(userId, creditScore);
+    const res = localDb.updateCreditScore(userId, creditScore);
+    if (res.success && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', userId), { creditScore }, { merge: true });
+      } catch (err) {
+        console.warn('Firestore updateCreditScore sync warning:', err);
+      }
+    }
+    try {
+      fetch(`/api/admin/users/${userId}/credit-score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creditScore })
+      }).catch(console.warn);
+    } catch {}
+    if (typeof window !== 'undefined' && res.user) {
+      window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
+    }
+    return res;
   },
 
   async resetUserPassword(userId: string, newPassword: string): Promise<any> {
-    return localDb.resetPassword(userId, newPassword);
+    const res = localDb.resetPassword(userId, newPassword);
+    try {
+      fetch(`/api/admin/users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword })
+      }).catch(console.warn);
+    } catch {}
+    return res;
   },
 
   async freezeUserAccount(userId: string, action: 'freeze' | 'reactivate', reason?: string): Promise<any> {
-    return localDb.freezeUser(userId, action, reason);
+    const res = localDb.freezeUser(userId, action, reason);
+    if (res.success && firestoreDb && res.user) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', userId), {
+          status: res.user.status,
+          freezeReason: res.user.freezeReason || ''
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Firestore freezeUserAccount sync warning:', err);
+      }
+    }
+    try {
+      fetch(`/api/admin/users/${userId}/freeze-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason })
+      }).catch(console.warn);
+    } catch {}
+    if (typeof window !== 'undefined' && res.user) {
+      window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', { detail: res.user }));
+      localStorage.setItem('flowcoin_last_freeze_update', Date.now().toString());
+    }
+    return res;
   },
 
   async deleteUser(userId: string): Promise<any> {

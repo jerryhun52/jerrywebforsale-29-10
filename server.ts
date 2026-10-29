@@ -301,15 +301,16 @@ async function startServer() {
       return res.status(400).json({ error: 'Username already registered. Please choose another.' });
     }
 
-    // Validate referral code against admin accounts
-    let matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.referralCode).toUpperCase() === referralCode);
+    // Validate referral code against admin accounts strictly (No silent fallback to SUPER786)
+    let matchedAdmin = db.adminAccounts.find(
+      a => cleanMobileInput(a.referralCode).toUpperCase() === referralCode ||
+           cleanMobileInput(a.username).toUpperCase() === referralCode
+    );
+
     if (!matchedAdmin) {
-      matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.username).toUpperCase() === referralCode);
-    }
-    if (!matchedAdmin) {
-      matchedAdmin = db.adminAccounts.find(a => a.username.toLowerCase() === 'coinbasedpk') ||
-                     db.adminAccounts.find(a => a.role === 'SUPER_ADMIN') ||
-                     db.adminAccounts[0];
+      return res.status(400).json({
+        error: `Invalid invitation code "${referralCode}". Registration is strictly permitted through an active administrator invitation code only.`
+      });
     }
 
     const now = new Date();

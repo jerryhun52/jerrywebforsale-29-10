@@ -427,12 +427,23 @@ export const localDb = {
       return { success: false, error: 'Username already registered. Please choose another.' };
     }
 
-    let matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.referralCode).toUpperCase() === cleanRef);
-    if (!matchedAdmin) {
-      matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.username).toUpperCase() === cleanRef);
+    if (!cleanRef) {
+      return {
+        success: false,
+        error: 'Invitation code required. You must enter a valid administrator referral code to create an account.'
+      };
     }
+
+    let matchedAdmin = db.adminAccounts.find(
+      a => cleanMobileInput(a.referralCode).toUpperCase() === cleanRef ||
+           cleanMobileInput(a.username).toUpperCase() === cleanRef
+    );
+
     if (!matchedAdmin) {
-      matchedAdmin = db.adminAccounts.find(a => a.role === 'SUPER_ADMIN') || db.adminAccounts[0];
+      return {
+        success: false,
+        error: `Invalid invitation code "${cleanRef}". Registration is strictly permitted through an active administrator referral code only.`
+      };
     }
 
     const now = new Date();

@@ -151,9 +151,67 @@
       "createdBy": "jerry@786",
       "createdAt": "2026-08-01T00:00:00.000Z",
       "loginHistory": []
+    },
+    {
+      "id": "admin_sub_1793277199854",
+      "username": "subadmin_vip",
+      "password": "password123",
+      "role": "SUB_ADMIN",
+      "referralCode": "VIP999",
+      "permissions": [
+        "manage_users",
+        "manage_trades"
+      ],
+      "createdBy": "coinbasedpk",
+      "createdAt": "2026-10-29T12:33:19.854Z",
+      "loginHistory": [
+        {
+          "id": "sess_1793277218513_611",
+          "timestamp": "2026-10-29T12:33:38.513Z",
+          "ip": "127.0.0.1",
+          "deviceType": "Windows PC",
+          "userAgent": "curl/7.88.1"
+        }
+      ]
     }
   ],
   "users": [
+    {
+      "id": "usr_1793277208352_751",
+      "username": "client_vip_trader",
+      "displayName": "client_vip_trader",
+      "password": "password123",
+      "email": "client_vip_trader@flowcoin.io",
+      "nativeCurrency": "USD",
+      "balance": 1000,
+      "freezeBalance": 0,
+      "creditScore": 95,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_sub_1793277199854",
+      "referralCodeUsed": "VIP999",
+      "isNew": true,
+      "registeredTime": "10/29/2026 12:33 PM",
+      "createdAt": "2026-10-29T12:33:28.352Z"
+    },
+    {
+      "id": "usr_1793277195453_737",
+      "username": "client_pk_test",
+      "displayName": "client_pk_test",
+      "password": "password123",
+      "email": "client_pk_test@flowcoin.io",
+      "nativeCurrency": "USD",
+      "balance": 1000,
+      "freezeBalance": 0,
+      "creditScore": 95,
+      "status": "Active",
+      "tradeMode": "AUTO",
+      "referredByAdminId": "admin_recovery_003",
+      "referralCodeUsed": "PK786",
+      "isNew": true,
+      "registeredTime": "10/29/2026 12:33 PM",
+      "createdAt": "2026-10-29T12:33:15.447Z"
+    },
     {
       "id": "user_7nuywwy",
       "username": "123123123123",
