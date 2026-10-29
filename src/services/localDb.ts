@@ -515,14 +515,18 @@ export const localDb = {
 
   getUsers(adminId?: string): User[] {
     const db = getDb();
-    const admin = db.adminAccounts.find(a => a.id === adminId);
+    const admin = db.adminAccounts.find(
+      a => a.id === adminId || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(adminId || '').toLowerCase()
+    );
 
     // Auto-fix any mismatched referredByAdminId based on referralCodeUsed
     let modified = false;
     db.users.forEach(u => {
       if (u.referralCodeUsed) {
+        const cleanRef = cleanMobileInput(u.referralCodeUsed).toUpperCase();
         const matched = db.adminAccounts.find(
-          a => cleanMobileInput(a.referralCode).toUpperCase() === cleanMobileInput(u.referralCodeUsed!).toUpperCase()
+          a => cleanMobileInput(a.referralCode).toUpperCase() === cleanRef ||
+               cleanMobileInput(a.username).toUpperCase() === cleanRef
         );
         if (matched && u.referredByAdminId !== matched.id) {
           u.referredByAdminId = matched.id;
@@ -536,7 +540,9 @@ export const localDb = {
 
     if (admin && admin.role === 'SUB_ADMIN') {
       return db.users.filter(
-        u => u.referredByAdminId === admin.id || (admin.referralCode && u.referralCodeUsed === admin.referralCode)
+        u => u.referredByAdminId === admin.id ||
+             (admin.referralCode && cleanMobileInput(u.referralCodeUsed || '').toUpperCase() === cleanMobileInput(admin.referralCode).toUpperCase()) ||
+             (admin.username && cleanMobileInput(u.referralCodeUsed || '').toUpperCase() === cleanMobileInput(admin.username).toUpperCase())
       );
     }
     return db.users;

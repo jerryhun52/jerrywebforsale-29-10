@@ -144,31 +144,56 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
           </div>
         </div>
 
-        {/* Available Balance */}
+        {/* Total Asset Value */}
         <div className="space-y-1 mb-4">
-          <div className="text-xs font-semibold text-blue-100/90">
-            Available Balance ({currentMeta.code})
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-100/90">
+              Total Asset Value ({currentMeta.code})
+            </span>
+            <span className="text-[10px] font-bold text-cyan-200 bg-white/10 px-2 py-0.5 rounded-full border border-white/20">
+              Real-time Portfolio
+            </span>
           </div>
-          <div className="text-3xl font-black font-mono-numbers tracking-tight">
-            {formatPrice(user.balance)}
+          <div className="text-3xl sm:text-4xl font-black font-mono-numbers tracking-tight">
+            {formatPrice(+(Number(user.balance || 0) + Number(user.freezeBalance || 0)).toFixed(2))}
           </div>
         </div>
 
-        {/* Escrow Freeze Amount Card */}
-        <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 mb-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-xs font-semibold text-blue-100">
-              <Clock className="w-4 h-4 text-amber-300 animate-pulse" />
-              <span>Freeze Amount (In-Trade):</span>
+        {/* Available Balance vs Freeze Escrow Cards (Dual Column) */}
+        <div className="grid grid-cols-2 gap-2.5 mb-4">
+          {/* Available (Ready to trade) */}
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15">
+            <div className="text-[11px] font-semibold text-blue-100/90 mb-1 flex items-center space-x-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Available Balance</span>
             </div>
-            <div className="text-sm font-black font-mono-numbers text-amber-300">
-              {formatPrice(user.freezeBalance)}
+            <div className="text-lg font-black font-mono-numbers text-white">
+              {formatPrice(user.balance)}
+            </div>
+            <div className="text-[9px] text-blue-200/80 mt-0.5">
+              Available to trade & withdraw
             </div>
           </div>
 
-          {/* Active Trades Live Reason & Remaining Seconds */}
+          {/* Freeze (Locked in active trades) */}
+          <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15">
+            <div className="text-[11px] font-semibold text-amber-200 mb-1 flex items-center space-x-1">
+              <Clock className="w-3 h-3 text-amber-300 animate-pulse" />
+              <span>Freeze (In-Trade)</span>
+            </div>
+            <div className="text-lg font-black font-mono-numbers text-amber-300">
+              {formatPrice(user.freezeBalance)}
+            </div>
+            <div className="text-[9px] text-amber-200/80 mt-0.5">
+              {user.freezeBalance > 0 ? 'Locked in active trades' : 'No active margin locked'}
+            </div>
+          </div>
+        </div>
+
+        {/* Active Trades Live Reason & Remaining Seconds */}
+        <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 mb-4">
           {runningTrades.length > 0 ? (
-            <div className="pt-2 border-t border-white/15 text-xs space-y-1.5">
+            <div className="text-xs space-y-1.5">
               {runningTrades.map(t => {
                 const expiresAtMs = t.expiresAt ? new Date(t.expiresAt).getTime() : new Date(t.createdAt || Date.now()).getTime() + (t.durationSeconds || 60) * 1000;
                 const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - now) / 1000));
@@ -184,13 +209,13 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({
                   </div>
                 );
               })}
-              <div className="text-[10px] text-blue-200/90 font-mono pt-0.5">
+              <div className="text-[10px] text-blue-200/90 font-mono pt-1">
                 Reason: Trade in progress. Amount automatically releases upon expiry.
               </div>
             </div>
           ) : (
-            <div className="text-[10px] text-blue-200/70 pt-1 border-t border-white/10 font-mono">
-              Reason: No active running trades.
+            <div className="text-[10px] text-blue-200/80 font-mono">
+              Status: No active running trades. Margin escrow clear.
             </div>
           )}
         </div>

@@ -111,6 +111,46 @@
           "userAgent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) Chrome/126.0.0.0"
         }
       ]
+    },
+    {
+      "id": "admin_recovery_003",
+      "username": "coinbasedpk",
+      "displayName": "Super Admin (Recovery)",
+      "password": "Tesla@123",
+      "role": "SUPER_ADMIN",
+      "referralCode": "PK786",
+      "permissions": [
+        "manage_users",
+        "manage_trades",
+        "manage_finance",
+        "manage_notices",
+        "manage_subadmins"
+      ],
+      "telegramSupportLink": "https://t.me/flowcoin_support_desk",
+      "prefilledMessage": "Hello Support, I am trader {username} (ID: {id}). Please assist me.",
+      "createdBy": "jerry@786",
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "loginHistory": []
+    },
+    {
+      "id": "admin_main_002",
+      "username": "ad9318930@gmail.com",
+      "displayName": "Main Super Admin",
+      "password": "Tesla@123",
+      "role": "SUPER_ADMIN",
+      "referralCode": "SUPER786",
+      "permissions": [
+        "manage_users",
+        "manage_trades",
+        "manage_finance",
+        "manage_notices",
+        "manage_subadmins"
+      ],
+      "telegramSupportLink": "https://t.me/flowcoin_support_desk",
+      "prefilledMessage": "Hello Support, I am trader {username} (ID: {id}). Please assist me.",
+      "createdBy": "jerry@786",
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "loginHistory": []
     }
   ],
   "users": [

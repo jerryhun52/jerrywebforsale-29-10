@@ -305,7 +305,22 @@ export const api = {
       }
     }
 
-    // 4. Real-time Audio Chime & Storage Event Broadcast
+    // 4. Sync to Express Backend Server (database.json)
+    try {
+      fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUser,
+          fullName: cleanFullName,
+          password: cleanPass,
+          referralCode: cleanRef,
+          nativeCurrency: currency
+        })
+      }).catch(console.warn);
+    } catch {}
+
+    // 5. Real-time Audio Chime & Storage Event Broadcast
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(new CustomEvent('flowcoin_new_user_registered', { detail: newUser }));
@@ -367,12 +382,13 @@ export const api = {
     }
 
     if (localUser) {
+      // Local storage is authoritative for instant trade updates.
+      // If cloudUser has newer status or fields, merge non-destructive properties
       if (cloudUser) {
-        const effectiveBalance = Math.max(Number(localUser.balance || 0), Number(cloudUser.balance || 0));
-        const effectiveFreeze = Math.max(Number(localUser.freezeBalance || 0), Number(cloudUser.freezeBalance || 0));
-        localUser.balance = effectiveBalance;
-        localUser.freezeBalance = effectiveFreeze;
-        localDb.addUser(localUser);
+        if (cloudUser.status) localUser.status = cloudUser.status;
+        if (cloudUser.tradeMode) localUser.tradeMode = cloudUser.tradeMode;
+        if (cloudUser.freezeReason !== undefined) localUser.freezeReason = cloudUser.freezeReason;
+        if (cloudUser.creditScore) localUser.creditScore = cloudUser.creditScore;
       }
       return { success: true, user: localUser };
     }
@@ -485,7 +501,23 @@ export const api = {
     const localUsers = localDb.getUsers(adminId);
     localUsers.forEach(u => userMap.set(u.id, u));
 
-    // 2. Load from Supabase if connected
+    // 2. Load from Express Backend Server
+    try {
+      const resp = await fetch(`/api/admin/users?adminId=${encodeURIComponent(adminId)}`);
+      if (resp.ok) {
+        const serverUsers = await resp.json();
+        if (Array.isArray(serverUsers)) {
+          serverUsers.forEach((u: User) => {
+            if (!userMap.has(u.id)) {
+              localDb.addUser(u);
+              userMap.set(u.id, u);
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // 3. Load from Supabase if connected
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: rows } = await supabase.from('users').select('*').eq('role', 'USER');
@@ -518,7 +550,7 @@ export const api = {
       }
     }
 
-    // 3. Load from Firestore if connected
+    // 4. Load from Firestore if connected
     if (firestoreDb) {
       try {
         const snap = await getDocs(collection(firestoreDb, 'users'));
@@ -542,7 +574,9 @@ export const api = {
 
     if (admin && admin.role === 'SUB_ADMIN') {
       return merged.filter(
-        u => u.referredByAdminId === admin.id || (admin.referralCode && u.referralCodeUsed === admin.referralCode)
+        u => u.referredByAdminId === admin.id ||
+             (admin.referralCode && cleanMobileInput(u.referralCodeUsed || '').toUpperCase() === cleanMobileInput(admin.referralCode).toUpperCase()) ||
+             (admin.username && cleanMobileInput(u.referralCodeUsed || '').toUpperCase() === cleanMobileInput(admin.username).toUpperCase())
       );
     }
 
@@ -820,15 +854,24 @@ export const api = {
         })();
       }
 
-      // Background non-blocking sync to Firestore
+      // Immediate Firestore balance and trade sync
       if (firestoreDb) {
         setDoc(doc(firestoreDb, 'trades', res.trade.id), res.trade).catch(console.warn);
+        if (res.balance !== undefined) {
+          setDoc(doc(firestoreDb, 'users', res.trade.userId), {
+            balance: res.balance,
+            freezeBalance: res.freezeBalance
+          }, { merge: true }).catch(console.warn);
+        }
       }
 
-      // Immediate window event broadcast
+      // Immediate real-time window event broadcasts
       if (typeof window !== 'undefined') {
         try {
           window.dispatchEvent(new CustomEvent('flowcoin_new_trade_placed', { detail: res.trade }));
+          window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', {
+            detail: { id: res.trade.userId, balance: res.balance, freezeBalance: res.freezeBalance }
+          }));
           localStorage.setItem('flowcoin_last_trade_time', Date.now().toString());
         } catch (e) {
           console.warn('Trade event dispatch warning:', e);

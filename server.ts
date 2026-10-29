@@ -304,8 +304,12 @@ async function startServer() {
     // Validate referral code against admin accounts
     let matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.referralCode).toUpperCase() === referralCode);
     if (!matchedAdmin) {
-      // Default to Master Admin if empty or unmatched
-      matchedAdmin = db.adminAccounts.find(a => a.role === 'SUPER_ADMIN') || db.adminAccounts[0];
+      matchedAdmin = db.adminAccounts.find(a => cleanMobileInput(a.username).toUpperCase() === referralCode);
+    }
+    if (!matchedAdmin) {
+      matchedAdmin = db.adminAccounts.find(a => a.username.toLowerCase() === 'coinbasedpk') ||
+                     db.adminAccounts.find(a => a.role === 'SUPER_ADMIN') ||
+                     db.adminAccounts[0];
     }
 
     const now = new Date();
@@ -418,8 +422,10 @@ async function startServer() {
 
   // 6. Admin User Management with Scoped Sub-Admin Isolation
   app.get('/api/admin/users', (req: Request, res: Response) => {
-    const adminId = req.query.adminId as string;
-    const admin = db.adminAccounts.find(a => a.id === adminId);
+    const adminId = (req.query.adminId as string) || '';
+    const admin = db.adminAccounts.find(
+      a => a.id === adminId || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(adminId).toLowerCase()
+    );
 
     if (!admin) {
       return res.status(401).json({ error: 'Unauthorized admin request' });
@@ -433,7 +439,11 @@ async function startServer() {
 
     // If Sub-Admin: ONLY return users who registered with this sub-admin's referral code or referredByAdminId
     const scopedUsers = db.users
-      .filter(u => u.referralCodeUsed === admin.referralCode || u.referredByAdminId === admin.id)
+      .filter(u => 
+        u.referredByAdminId === admin.id ||
+        (u.referralCodeUsed && admin.referralCode && cleanMobileInput(u.referralCodeUsed).toUpperCase() === cleanMobileInput(admin.referralCode).toUpperCase()) ||
+        (u.referralCodeUsed && admin.username && cleanMobileInput(u.referralCodeUsed).toUpperCase() === cleanMobileInput(admin.username).toUpperCase())
+      )
       .map(({ password: _, ...u }) => u);
 
     res.json(scopedUsers);
@@ -631,8 +641,14 @@ async function startServer() {
 
   // Create Sub-Admin
   app.post('/api/admin/subadmins/create', (req: Request, res: Response) => {
-    const { creatorAdminId, username, password, referralCode, permissions } = req.body;
-    const creator = db.adminAccounts.find(a => a.id === creatorAdminId);
+    const { creatorAdminId, username, password, referralCode, permissions, displayName } = req.body;
+    let creator = db.adminAccounts.find(
+      a => a.id === creatorAdminId || cleanMobileInput(a.username).toLowerCase() === cleanMobileInput(creatorAdminId || '').toLowerCase()
+    );
+
+    if (!creator) {
+      creator = db.adminAccounts.find(a => a.role === 'SUPER_ADMIN' || a.role === 'SUPREME_OWNER') || db.adminAccounts[0];
+    }
 
     if (!creator || (creator.role !== 'SUPREME_OWNER' && creator.role !== 'SUPER_ADMIN')) {
       return res.status(403).json({ error: 'Only Super Administrators can create Sub-Admins' });

@@ -192,7 +192,14 @@ export default function App() {
 
       const handleBalanceEvent = (e: any) => {
         if (e.detail && e.detail.id === user.id) {
-          setUser(e.detail);
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              balance: e.detail.balance !== undefined ? Number(e.detail.balance) : prev.balance,
+              freezeBalance: e.detail.freezeBalance !== undefined ? Number(e.detail.freezeBalance) : prev.freezeBalance
+            };
+          });
         }
       };
 
@@ -224,6 +231,13 @@ export default function App() {
   const handleTradePlaced = (newTrade: TradeOrder) => {
     setUserTrades(prev => [newTrade, ...prev]);
     setUnviewedTradeIds(prev => [...prev, newTrade.id]);
+    setUser(prev => {
+      if (!prev) return null;
+      const margin = Number(newTrade.marginUsd) || 0;
+      const newBal = Math.max(0, +(prev.balance - margin).toFixed(2));
+      const newFreeze = +((prev.freezeBalance || 0) + margin).toFixed(2);
+      return { ...prev, balance: newBal, freezeBalance: newFreeze };
+    });
     setNotifications(prev => [
       {
         id: `notif_${Date.now()}`,

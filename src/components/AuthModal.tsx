@@ -204,7 +204,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
 
-      // 2. Direct Supabase Client Login Query
+      // 2. Check Admin Login via api.loginAdmin (checks backend /api/admin/login and Firestore `admins`)
+      try {
+        const adminRes = await api.loginAdmin(cleanUser, cleanPass);
+        if (adminRes.success && adminRes.admin) {
+          localStorage.setItem('flowcoin_admin_id', adminRes.admin.id);
+          localDb.addAdmin(adminRes.admin);
+          if (onAdminLoginSuccess) onAdminLoginSuccess(adminRes.admin);
+          onClose();
+          return;
+        }
+      } catch (e) {}
+
+      // 3. Check Backend Server Unified Auth (/api/auth/login)
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: cleanUser, password: cleanPass })
+        });
+        if (resp.ok) {
+          const authData = await resp.json();
+          if (authData.success) {
+            if (authData.isAdmin && authData.admin) {
+              localStorage.setItem('flowcoin_admin_id', authData.admin.id);
+              localDb.addAdmin(authData.admin);
+              if (onAdminLoginSuccess) onAdminLoginSuccess(authData.admin);
+              onClose();
+              return;
+            } else if (authData.user) {
+              localDb.addUser(authData.user);
+              saveAccountCredentials(cleanUser, cleanPass, authData.user.displayName);
+              onLoginSuccess(authData.user);
+              onClose();
+              return;
+            }
+          }
+        }
+      } catch (e) {}
+
+      // 4. Direct Supabase Client Login Query
       if (isSupabaseConfigured && supabase) {
         const { data: userRows, error: userErr } = await supabase
           .from('users')
@@ -240,6 +279,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               createdAt: row.created_at
             };
             localStorage.setItem('flowcoin_admin_id', adminObj.id);
+            localDb.addAdmin(adminObj);
             if (onAdminLoginSuccess) onAdminLoginSuccess(adminObj);
             onClose();
             return;
@@ -278,21 +318,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
 
-      // Local storage auth fallback
-      const res = localDb.login(cleanUser, cleanPass);
-      if (res.success) {
-        if (res.isAdmin && res.admin) {
-          localStorage.setItem('flowcoin_admin_id', res.admin.id);
-          if (onAdminLoginSuccess) onAdminLoginSuccess(res.admin);
-          onClose();
-        } else if (res.user) {
-          saveAccountCredentials(cleanUser, cleanPass, res.user.displayName);
-          onLoginSuccess(res.user);
-          onClose();
-        }
-      } else {
-        setError(res.error || 'Login failed. Check your username and password.');
-      }
+      setError(localCheck.error || 'Account not found. Please verify your username.');
     } catch (err: any) {
       console.warn('Authentication error:', err);
       setError(err?.message || 'Authentication error. Please check your credentials.');
@@ -626,44 +652,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ) : (
               /* LOGIN FORM */
               <>
-                {savedAccounts.length > 0 && (
-                  <div className="mb-3 p-3 rounded-2xl bg-[#080d17] border border-cyan-500/40 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-cyan-300 flex items-center space-x-1">
-                        <span>⚡ Last Login (1-Click Auto Login):</span>
-                      </span>
-                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/70 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                        Password Saved
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {savedAccounts.map(acc => (
-                        <button
-                          key={acc.username}
-                          type="button"
-                          onClick={() => handle1ClickLogin(acc)}
-                          className="w-full px-3 py-2 rounded-xl bg-[#0c1424] hover:bg-cyan-950/90 border border-slate-700 hover:border-cyan-400 flex items-center justify-between text-left transition-all group active:scale-[0.98]"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 rounded-lg bg-cyan-900/40 border border-cyan-500/30 text-cyan-300 flex items-center justify-center font-bold text-[10px]">
-                              👤
-                            </div>
-                            <div>
-                              <div className="text-xs font-black text-white font-mono">@{acc.username}</div>
-                              <div className="text-[10px] text-slate-400">{acc.displayName || 'Trader'}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-1 text-[11px] font-bold text-cyan-400 group-hover:text-white">
-                            <span>Instant Login</span>
-                            <span className="group-hover:translate-x-0.5 transition-transform">➔</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div>
                   <label className="text-xs font-bold text-slate-300 block mb-1">
                     Username *
@@ -704,6 +692,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Saved Accounts: Compact, Max 2 Logins Directly Under Password */}
+                {savedAccounts.length > 0 && (
+                  <div className="pt-0.5 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold px-0.5">
+                      <span>⚡ Quick 1-Click Login:</span>
+                      <span className="text-emerald-400">Password Saved</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {savedAccounts.slice(0, 2).map(acc => (
+                        <button
+                          key={acc.username}
+                          type="button"
+                          onClick={() => handle1ClickLogin(acc)}
+                          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-[#0c1424] hover:bg-cyan-950/80 border border-slate-700/70 hover:border-cyan-400 text-left transition-all active:scale-95 group"
+                          title={`Log in as ${acc.username}`}
+                        >
+                          <span className="w-4 h-4 rounded-full bg-cyan-900/60 text-cyan-300 flex items-center justify-center font-bold text-[9px]">
+                            👤
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-slate-200 group-hover:text-cyan-300">
+                            @{acc.username}
+                          </span>
+                          <span className="text-[10px] text-cyan-400 font-bold">➔</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
