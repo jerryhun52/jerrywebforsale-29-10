@@ -1108,7 +1108,7 @@ export const api = {
     return this.settleTrade(tradeId, forceOutcome, 81500);
   },
 
-  async adminUpdateActiveTrade(tradeId: string, updates: { marginUsd?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): Promise<any> {
+  async adminUpdateActiveTrade(tradeId: string, updates: { marginUsd?: number; marginNative?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): Promise<any> {
     const res = localDb.updateActiveTrade(tradeId, updates);
     if (!res.success) return res;
 
@@ -1336,7 +1336,8 @@ export const api = {
       if (firestoreDb) {
         try {
           setDoc(doc(firestoreDb, 'users', res.user.id), {
-            balance: res.user.balance
+            balance: res.user.balance,
+            freezeBalance: res.user.freezeBalance
           }, { merge: true }).catch(console.warn);
         } catch {}
       }
@@ -1345,7 +1346,10 @@ export const api = {
         fetch(`/api/admin/users/${res.user.id}/balance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ balance: res.user.balance })
+          body: JSON.stringify({
+            balance: res.user.balance,
+            freezeBalance: res.user.freezeBalance
+          })
         }).catch(console.warn);
       } catch {}
 
@@ -1357,18 +1361,51 @@ export const api = {
       }
     }
 
-    if (res.success && isSupabaseConfigured && supabase) {
+    if (res.success && res.request) {
+      // 1. Sync request status & rejection note/remarks to Firestore for live instant update
+      if (firestoreDb) {
+        try {
+          await setDoc(doc(firestoreDb, 'walletRequests', requestId), {
+            status: res.request.status,
+            remarks: res.request.remarks || remarks || '',
+            processedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Firestore request action sync warning:', err);
+        }
+      }
+
+      // 2. Sync to Express Backend Server
       try {
-        await supabase
-          .from('withdrawal_requests')
-          .update({
-            status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-            remarks: remarks || `${action} by Administrator`,
-            processed_at: new Date().toISOString()
-          })
-          .eq('id', requestId);
-      } catch {
-        // Handled
+        fetch(`/api/finance/requests/${encodeURIComponent(requestId)}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, remarks })
+        }).catch(console.warn);
+      } catch {}
+
+      // 3. Sync to Supabase
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase
+            .from('withdrawal_requests')
+            .update({
+              status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+              remarks: remarks || `${action} by Administrator`,
+              processed_at: new Date().toISOString()
+            })
+            .eq('id', requestId);
+        } catch {
+          // Handled
+        }
+      }
+
+      // 4. Dispatch live update event
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('flowcoin_wallet_request_updated', { detail: res.request }));
+          localStorage.setItem('flowcoin_last_request_time', Date.now().toString());
+        } catch {}
       }
     }
 

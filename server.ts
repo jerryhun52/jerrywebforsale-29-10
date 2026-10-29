@@ -816,32 +816,38 @@ async function startServer() {
   });
 
   app.post('/api/trades/place', (req: Request, res: Response) => {
-    const { userId, symbol, direction, durationSeconds, profitPercent, marginUsd } = req.body;
+    const { userId, symbol, direction, durationSeconds, profitPercent, marginUsd, marginNative } = req.body;
     const user = db.users.find(u => u.id === userId);
 
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.status !== 'Active') return res.status(403).json({ error: 'Account is restricted from trading' });
 
-    const margin = parseFloat(marginUsd);
-    if (isNaN(margin) || margin <= 0) {
+    const meta = CURRENCIES[user.nativeCurrency || 'USD'] || CURRENCIES.USD;
+    const rate = meta.rate || 1.0;
+
+    let nativeAmt = parseFloat(marginNative || marginUsd);
+    if (isNaN(nativeAmt) || nativeAmt <= 0) {
       return res.status(400).json({ error: 'Invalid investment margin amount' });
     }
 
-    if (user.balance < margin) {
-      return res.status(400).json({ error: 'Insufficient balance to place trade' });
+    let usdAmt = +(nativeAmt / rate).toFixed(2);
+    if (user.nativeCurrency === 'USD') {
+      usdAmt = nativeAmt;
     }
 
-    // Freeze balance immediately
-    user.balance = +(user.balance - margin).toFixed(2);
-    user.freezeBalance = +(user.freezeBalance + margin).toFixed(2);
+    if (user.balance < nativeAmt) {
+      return res.status(400).json({ error: `Insufficient balance to place trade! Available: ${meta.symbol}${user.balance.toLocaleString()} ${meta.code}` });
+    }
+
+    // Freeze native balance immediately
+    user.balance = +(user.balance - nativeAmt).toFixed(2);
+    user.freezeBalance = +(user.freezeBalance + nativeAmt).toFixed(2);
 
     const livePrice = liveCoinPrices[symbol]?.price || 81400;
     const startTime = Date.now();
     const duration = parseInt(durationSeconds) || 60;
     const endTime = startTime + duration * 1000;
     const profitRate = parseFloat(profitPercent) || 20;
-
-    const rate = CURRENCIES[user.nativeCurrency]?.rate || 1.0;
 
     const newTrade: TradeOrder = {
       id: `trd_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -852,15 +858,16 @@ async function startServer() {
       direction,
       durationSeconds: duration,
       profitPercent: profitRate,
-      marginUsd: margin,
-      marginNative: +(margin * rate).toFixed(2),
-      nativeCurrency: user.nativeCurrency,
+      marginUsd: usdAmt,
+      marginNative: nativeAmt,
+      nativeCurrency: user.nativeCurrency || 'USD',
       entryPrice: livePrice,
       currentPrice: livePrice,
       startTime,
       endTime,
       outcome: 'PENDING',
       payoutUsd: 0,
+      payoutNative: 0,
       status: 'RUNNING',
       adminOverride: user.tradeMode,
       settledAt: undefined
@@ -883,6 +890,10 @@ async function startServer() {
 
     const user = db.users.find(u => u.id === trade.userId);
     if (!user) return res.status(404).json({ error: 'Trade user not found' });
+
+    const meta = CURRENCIES[user.nativeCurrency || 'USD'] || CURRENCIES.USD;
+    const rate = meta.rate || 1.0;
+    const marginNative = trade.marginNative || trade.marginUsd;
 
     const live = liveCoinPrices[trade.symbol]?.price || trade.entryPrice;
     trade.exitPrice = live;
@@ -909,17 +920,19 @@ async function startServer() {
     trade.settledAt = new Date().toISOString();
 
     // Release frozen escrow
-    user.freezeBalance = Math.max(0, +(user.freezeBalance - trade.marginUsd).toFixed(2));
+    user.freezeBalance = Math.max(0, +(user.freezeBalance - marginNative).toFixed(2));
 
     if (isWin) {
       trade.outcome = 'WIN';
-      const profitUsd = +(trade.marginUsd * (trade.profitPercent / 100)).toFixed(2);
-      const totalPayout = +(trade.marginUsd + profitUsd).toFixed(2);
-      trade.payoutUsd = totalPayout;
-      user.balance = +(user.balance + totalPayout).toFixed(2);
+      const profitNative = +(marginNative * (trade.profitPercent / 100)).toFixed(2);
+      const payoutNative = +(marginNative + profitNative).toFixed(2);
+      trade.payoutNative = payoutNative;
+      trade.payoutUsd = +(payoutNative / rate).toFixed(2);
+      user.balance = +(user.balance + payoutNative).toFixed(2);
     } else {
       trade.outcome = 'LOSS';
       trade.payoutUsd = 0;
+      trade.payoutNative = 0;
       // Margin lost, already deducted from balance upon trade entry
     }
 

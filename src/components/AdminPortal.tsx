@@ -381,10 +381,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                   playRegistrationChime();
                   const u = users.find(usr => usr.id === newTrade.userId);
                   const meta = CURRENCIES[newTrade.nativeCurrency || u?.nativeCurrency || 'INR'] || CURRENCIES.INR;
-                  const nativeAmt = newTrade.marginNative || (newTrade.marginUsd * meta.rate);
+                  const nativeAmt = newTrade.marginNative || newTrade.marginUsd;
                   const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
                   setAdminNotificationToast(
-                    `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: ${formattedNative} ($${newTrade.marginUsd} USD)`
+                    `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: ${formattedNative}`
                   );
                   setTimeout(() => setAdminNotificationToast(null), 6000);
                 }
@@ -418,7 +418,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
                   if (newReq.type === 'WITHDRAWAL') {
                     setAdminNotificationToast(
-                      `💸 NEW WITHDRAWAL REQUEST: ${formattedNative} (${newReq.amountUsd ? `$${newReq.amountUsd} USD` : ''}) applied by @${newReq.username}`
+                      `💸 NEW WITHDRAWAL REQUEST: ${formattedNative} applied by @${newReq.username}`
                     );
                   } else {
                     setAdminNotificationToast(
@@ -452,9 +452,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
       fetchAllAdminData();
       playRegistrationChime();
       const meta = CURRENCIES[(e.detail?.nativeCurrency as Currency) || 'INR'] || CURRENCIES.INR;
-      const nativeAmt = e.detail?.marginNative || ((e.detail?.marginUsd || 0) * meta.rate);
+      const nativeAmt = e.detail?.marginNative || e.detail?.marginUsd || 0;
       const formattedNative = `${meta.flag} ${meta.symbol}${Number(nativeAmt).toLocaleString()} ${meta.code}`;
-      setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed ${formattedNative} ($${e.detail?.marginUsd || ''} USD) on ${e.detail?.symbol} (${e.detail?.direction})`);
+      setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed ${formattedNative} on ${e.detail?.symbol} (${e.detail?.direction})`);
       setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
@@ -1963,14 +1963,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                               <div>
                                 <span className="text-[10px] text-slate-400 block">Trade Amount</span>
                                 <span className="font-black text-amber-400 text-sm">
-                                  {userMeta.code !== 'USD' ? (
-                                    <>
-                                      {userMeta.flag} {userMeta.symbol}{Number(t.marginNative || (t.marginUsd * userMeta.rate)).toLocaleString()} {userMeta.code}
-                                      <span className="text-[10px] text-slate-400 block font-normal">(${t.marginUsd} USD)</span>
-                                    </>
-                                  ) : (
-                                    <>${t.marginUsd} USD</>
-                                  )}
+                                  {userMeta.flag} {userMeta.symbol}{Number(t.marginNative || t.marginUsd).toLocaleString()} {userMeta.code}
                                 </span>
                               </div>
                               <div>
@@ -1995,69 +1988,74 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    const newMargin = Math.max(1, t.marginUsd + 10);
-                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    const oldNative = t.marginNative || t.marginUsd;
+                                    const newNative = oldNative + 100;
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginNative: newNative });
                                     if (res.error) alert(res.error);
                                     else fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
                                 >
-                                  +$10
+                                  +{userMeta.symbol}100
                                 </button>
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    const newMargin = Math.max(1, t.marginUsd + 50);
-                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    const oldNative = t.marginNative || t.marginUsd;
+                                    const newNative = oldNative + 500;
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginNative: newNative });
                                     if (res.error) alert(res.error);
                                     else fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
                                 >
-                                  +$50
+                                  +{userMeta.symbol}500
                                 </button>
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    const newMargin = Math.max(1, t.marginUsd + 100);
-                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    const oldNative = t.marginNative || t.marginUsd;
+                                    const newNative = oldNative + 1000;
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginNative: newNative });
                                     if (res.error) alert(res.error);
                                     else fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
                                 >
-                                  +$100
+                                  +{userMeta.symbol}1000
                                 </button>
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    const newMargin = Math.max(1, t.marginUsd - 10);
-                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    const oldNative = t.marginNative || t.marginUsd;
+                                    const newNative = Math.max(1, oldNative - 100);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginNative: newNative });
                                     if (res.error) alert(res.error);
                                     else fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-bold border border-rose-500/40 transition-all active:scale-95"
                                 >
-                                  -$10
+                                  -{userMeta.symbol}100
                                 </button>
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    const newMargin = Math.max(1, t.marginUsd - 50);
-                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    const oldNative = t.marginNative || t.marginUsd;
+                                    const newNative = Math.max(1, oldNative - 500);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginNative: newNative });
                                     if (res.error) alert(res.error);
                                     else fetchAllAdminData();
                                   }}
                                   className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-bold border border-rose-500/40 transition-all active:scale-95"
                                 >
-                                  -$50
+                                  -{userMeta.symbol}500
                                 </button>
 
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setEditingTrade(t);
-                                    setEditTradeMarginInput(t.marginUsd.toString());
+                                    setEditTradeMarginInput((t.marginNative || t.marginUsd).toString());
                                     setEditTradeProfitInput(t.profitPercent);
                                     setEditTradeDirectionInput(t.direction);
                                   }}
@@ -2135,18 +2133,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                           {(() => {
                             const u = users.find(usr => usr.id === t.userId);
                             const meta = CURRENCIES[t.nativeCurrency || u?.nativeCurrency || 'INR'] || CURRENCIES.INR;
-                            const nativeAmt = t.marginNative || (t.marginUsd * meta.rate);
-                            return meta.code !== 'USD' ? (
-                              <div>
-                                <span className="text-xs font-black text-amber-400 block font-sans">
-                                  {meta.flag} {meta.symbol}{Number(nativeAmt).toLocaleString()} {meta.code}
-                                </span>
-                                <span className="text-[10px] text-slate-400 block font-normal font-mono">
-                                  (${t.marginUsd} USD)
-                                </span>
-                              </div>
-                            ) : (
-                              <span>${t.marginUsd}</span>
+                            const nativeAmt = t.marginNative || t.marginUsd;
+                            return (
+                              <span className="text-xs font-black text-amber-400 block font-sans">
+                                {meta.flag} {meta.symbol}{Number(nativeAmt).toLocaleString()} {meta.code}
+                              </span>
                             );
                           })()}
                         </td>
@@ -2937,31 +2928,37 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
             <div className="space-y-4">
               {/* Trade Margin Amount */}
-              <div>
-                <label className="text-xs font-bold text-amber-300 flex justify-between">
-                  <span>Trade Margin Amount ($ USD):</span>
-                  <span className="text-slate-400 font-mono">Current: ${editingTrade.marginUsd}</span>
-                </label>
-                <div className="relative mt-1">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
-                  <input
-                    type="number"
-                    value={editTradeMarginInput}
-                    onChange={(e) => setEditTradeMarginInput(e.target.value)}
-                    placeholder="Enter new margin amount"
-                    className="w-full bg-[#080d17] text-sm font-black text-amber-400 rounded-xl pl-8 pr-3.5 py-2.5 border border-slate-700 focus:outline-none focus:border-cyan-400 font-mono"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Increasing or decreasing this amount will automatically adjust the trader's balance and escrow escrow in real-time!
-                </p>
-              </div>
+              {(() => {
+                const u = users.find(usr => usr.id === editingTrade.userId);
+                const meta = CURRENCIES[editingTrade.nativeCurrency || u?.nativeCurrency || 'INR'] || CURRENCIES.INR;
+                return (
+                  <div>
+                    <label className="text-xs font-bold text-amber-300 flex justify-between">
+                      <span>Trade Margin Amount ({meta.code} - {meta.symbol}):</span>
+                      <span className="text-slate-400 font-mono">Current: {meta.symbol}{editingTrade.marginNative || editingTrade.marginUsd}</span>
+                    </label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{meta.symbol}</span>
+                      <input
+                        type="number"
+                        value={editTradeMarginInput}
+                        onChange={(e) => setEditTradeMarginInput(e.target.value)}
+                        placeholder={`Enter margin amount in ${meta.code}`}
+                        className="w-full bg-[#080d17] text-sm font-black text-amber-400 rounded-xl pl-8 pr-3.5 py-2.5 border border-slate-700 focus:outline-none focus:border-cyan-400 font-mono"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Increasing or decreasing this amount will automatically adjust the trader's balance and escrow in real-time!
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Profit Yield % */}
               <div>
                 <label className="text-xs font-bold text-slate-300">Profit Yield Rate (%)</label>
                 <div className="grid grid-cols-5 gap-1.5 mt-1">
-                  {[20, 40, 60, 80, 100].map(pct => (
+                  {[20, 30, 50, 80, 100].map(pct => (
                     <button
                       key={pct}
                       type="button"
@@ -3026,14 +3023,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                       return;
                     }
                     const res = await api.adminUpdateActiveTrade(editingTrade.id, {
-                      marginUsd: num,
+                      marginNative: num,
                       profitPercent: editTradeProfitInput,
                       direction: editTradeDirectionInput
                     });
                     if (res.error) {
                       alert(res.error);
                     } else {
-                      alert(`Active trade @${editingTrade.username} updated successfully! New Margin: $${num}`);
+                      alert(`Active trade @${editingTrade.username} updated successfully! New Margin: ${num}`);
                       setEditingTrade(null);
                       fetchAllAdminData();
                     }

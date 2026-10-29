@@ -653,11 +653,28 @@ export const localDb = {
     const db = getDb();
     const user = db.users.find(u => u.id === trade.userId);
     if (!user) return { error: 'User not found' };
-    if (user.balance < (trade.marginUsd || 0)) {
-      return { error: `Insufficient balance! Your available balance is ${user.balance}.` };
+
+    const meta = CURRENCIES[user.nativeCurrency || 'USD'] || CURRENCIES.USD;
+    const rate = meta.rate || 1.0;
+
+    let marginNative = trade.marginNative;
+    let marginUsd = trade.marginUsd || 0;
+
+    if (user.nativeCurrency !== 'USD') {
+      marginNative = marginNative || trade.marginUsd || 0;
+      marginUsd = +(marginNative / rate).toFixed(2);
+    } else {
+      marginUsd = marginUsd || trade.marginNative || 0;
+      marginNative = marginUsd;
     }
-    user.balance = +(user.balance - (trade.marginUsd || 0)).toFixed(2);
-    user.freezeBalance = +(user.freezeBalance + (trade.marginUsd || 0)).toFixed(2);
+
+    if (user.balance < marginNative) {
+      return { error: `Insufficient balance! Your available balance is ${meta.symbol}${user.balance.toLocaleString()} ${meta.code}.` };
+    }
+
+    // Deduct native amount from balance
+    user.balance = +(user.balance - marginNative).toFixed(2);
+    user.freezeBalance = +(user.freezeBalance + marginNative).toFixed(2);
 
     const newTrade: TradeOrder = {
       id: `tr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -667,12 +684,15 @@ export const localDb = {
       direction: trade.direction || 'UP',
       durationSeconds: trade.durationSeconds || 60,
       profitPercent: trade.profitPercent || 20,
-      marginUsd: trade.marginUsd || 50,
+      marginUsd,
+      marginNative,
+      nativeCurrency: user.nativeCurrency || 'USD',
       entryPrice: trade.entryPrice || 81400,
       targetPrice: trade.targetPrice || 81400,
       outcome: 'PENDING',
       status: 'RUNNING',
       payoutUsd: 0,
+      payoutNative: 0,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + (trade.durationSeconds || 60) * 1000).toISOString()
     };
@@ -682,18 +702,27 @@ export const localDb = {
     return { success: true, trade: newTrade, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
-  updateActiveTrade(tradeId: string, updates: { marginUsd?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): any {
+  updateActiveTrade(tradeId: string, updates: { marginUsd?: number; marginNative?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): any {
     const db = getDb();
     const trade = db.trades.find(t => t.id === tradeId);
     if (!trade) return { error: 'Trade not found' };
     const user = db.users.find(u => u.id === trade.userId);
     if (!user) return { error: 'User not found' };
 
-    if (updates.marginUsd !== undefined && updates.marginUsd > 0) {
-      const diff = updates.marginUsd - trade.marginUsd;
+    const meta = CURRENCIES[user.nativeCurrency || 'USD'] || CURRENCIES.USD;
+    const rate = meta.rate || 1.0;
+
+    const oldMarginNative = trade.marginNative || trade.marginUsd;
+
+    if (updates.marginNative !== undefined || updates.marginUsd !== undefined) {
+      const newMarginNative = updates.marginNative !== undefined
+        ? updates.marginNative
+        : (user.nativeCurrency !== 'USD' ? updates.marginUsd! : updates.marginUsd!);
+      
+      const diff = newMarginNative - oldMarginNative;
       if (diff > 0) {
         if (user.balance < diff) {
-          return { error: `User balance insufficient! Available: $${user.balance}, needed: $${diff.toFixed(2)}` };
+          return { error: `User balance insufficient! Available: ${meta.symbol}${user.balance}, needed: ${meta.symbol}${diff.toFixed(2)}` };
         }
         user.balance = +(user.balance - diff).toFixed(2);
         user.freezeBalance = +(user.freezeBalance + diff).toFixed(2);
@@ -702,9 +731,9 @@ export const localDb = {
         user.freezeBalance = Math.max(0, +(user.freezeBalance - release).toFixed(2));
         user.balance = +(user.balance + release).toFixed(2);
       }
-      trade.marginUsd = updates.marginUsd;
-      const rate = CURRENCIES[user.nativeCurrency]?.rate || 1.0;
-      trade.marginNative = +(updates.marginUsd * rate).toFixed(2);
+
+      trade.marginNative = newMarginNative;
+      trade.marginUsd = +(newMarginNative / rate).toFixed(2);
     }
 
     if (updates.profitPercent !== undefined) {
@@ -726,25 +755,44 @@ export const localDb = {
     return { success: true, trade, user, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
-  settleTrade(tradeId: string, outcome: 'WIN' | 'LOSS', finalPrice: number): any {
+  settleTrade(tradeId: string, outcome: 'WIN' | 'LOSS', finalPrice?: number): any {
     const db = getDb();
     const trade = db.trades.find(t => t.id === tradeId);
     if (!trade) return { error: 'Trade not found' };
+    
+    // STRICT IDEMPOTENCY: Prevent double settlement / double addition
+    if (trade.status === 'SETTLED') {
+      return { success: true, trade, alreadySettled: true };
+    }
+
     const user = db.users.find(u => u.id === trade.userId);
     if (!user) return { error: 'User not found' };
 
+    const meta = CURRENCIES[user.nativeCurrency || 'USD'] || CURRENCIES.USD;
+    const rate = meta.rate || 1.0;
+    const marginNative = trade.marginNative || trade.marginUsd;
+
     trade.status = 'SETTLED';
     trade.outcome = outcome;
-    trade.finalPrice = finalPrice;
+    if (finalPrice) trade.finalPrice = finalPrice;
     trade.closedAt = new Date().toISOString();
 
-    user.freezeBalance = Math.max(0, +(user.freezeBalance - trade.marginUsd).toFixed(2));
+    // Release frozen margin from escrow
+    user.freezeBalance = Math.max(0, +(user.freezeBalance - marginNative).toFixed(2));
+
     if (outcome === 'WIN') {
-      const profit = +(trade.marginUsd * (trade.profitPercent / 100)).toFixed(2);
-      trade.payoutUsd = +(trade.marginUsd + profit).toFixed(2);
-      user.balance = +(user.balance + trade.payoutUsd).toFixed(2);
+      const profitPercent = trade.profitPercent || 20;
+      const profitNative = +(marginNative * (profitPercent / 100)).toFixed(2);
+      const payoutNative = +(marginNative + profitNative).toFixed(2);
+
+      trade.payoutNative = payoutNative;
+      trade.payoutUsd = +(payoutNative / rate).toFixed(2);
+
+      // Credit total payout (margin + profit yield) back to user's native balance
+      user.balance = +(user.balance + payoutNative).toFixed(2);
     } else {
       trade.payoutUsd = 0;
+      trade.payoutNative = 0;
     }
 
     saveDb(db);

@@ -150,14 +150,18 @@ export const TradeTab: React.FC<TradeTabProps> = ({
 
     setIsSubmitting(true);
     try {
+      const marginNative = parsedAmount;
+      const marginUsdVal = activeCurrencyCode === 'USD' ? parsedAmount : +(parsedAmount / rate).toFixed(2);
+
       const res = await api.placeTrade({
         userId: user.id,
         symbol: currentCoin.symbol,
         direction,
         durationSeconds: selectedDuration.seconds,
         profitPercent: selectedDuration.yieldPercent,
-        marginUsd: parsedAmount
-      });
+        marginUsd: marginUsdVal,
+        marginNative
+      } as any);
 
       if (res.success && res.trade) {
         onRefreshUser();

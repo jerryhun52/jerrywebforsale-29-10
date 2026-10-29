@@ -88,6 +88,7 @@ export interface TradeOrder {
   endTime?: number; // ms
   outcome: TradeOutcome;
   payoutUsd: number;
+  payoutNative?: number;
   status: 'RUNNING' | 'SETTLED';
   adminOverride?: TradeMode;
   settledAt?: string;
