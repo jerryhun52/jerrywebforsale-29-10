@@ -43,6 +43,8 @@ import {
   Currency,
   CURRENCIES
 } from '../types.ts';
+import { onSnapshot, collection } from 'firebase/firestore';
+import { db as firestoreDb } from '../services/firebase.ts';
 import { cleanMobileInput } from '../utils/sanitizer.ts';
 import { api } from '../services/api.ts';
 
@@ -101,6 +103,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
   // Referral Customization Modal
   const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [customReferralCode, setCustomReferralCode] = useState('');
+
+  // Active Running Trade Control Modal
+  const [editingTrade, setEditingTrade] = useState<TradeOrder | null>(null);
+  const [editTradeMarginInput, setEditTradeMarginInput] = useState<string>('');
+  const [editTradeProfitInput, setEditTradeProfitInput] = useState<number>(20);
+  const [editTradeDirectionInput, setEditTradeDirectionInput] = useState<'UP' | 'DOWN'>('UP');
 
   // Add Client Modal
   const [addClientModalOpen, setAddClientModalOpen] = useState(false);
@@ -327,33 +335,101 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
 
   const [adminNotificationToast, setAdminNotificationToast] = useState<string | null>(null);
 
-  // Real-time Sound & Notification Listener for Registrations, Trades, and Withdrawals
+  // Sub-Second Real-time Sound & Notification Listener via Firestore onSnapshot & Window Events
   useEffect(() => {
-    const handleNewUserRegistration = (e: any) => {
-      if (currentAdmin) {
-        fetchAllAdminData();
-        playRegistrationChime();
-        setAdminNotificationToast(`👤 New Trader Registered: @${e.detail?.username || 'Client'}`);
-        setTimeout(() => setAdminNotificationToast(null), 5000);
+    if (!currentAdmin) return;
+
+    let unsubTrades: (() => void) | null = null;
+    let unsubRequests: (() => void) | null = null;
+
+    // 1. Direct Firestore Sub-second Live Subscription (<1s without refresh)
+    if (firestoreDb) {
+      let isInitialTrades = true;
+      let isInitialRequests = true;
+
+      try {
+        unsubTrades = onSnapshot(collection(firestoreDb, 'trades'), (snapshot) => {
+          const updatedTrades: TradeOrder[] = [];
+          snapshot.forEach(docSnap => {
+            updatedTrades.push(docSnap.data() as TradeOrder);
+          });
+
+          updatedTrades.sort((a, b) => {
+            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.startTime || 0);
+            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.startTime || 0);
+            return timeB - timeA;
+          });
+
+          if (!isInitialTrades) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                const newTrade = change.doc.data() as TradeOrder;
+                playRegistrationChime();
+                setAdminNotificationToast(
+                  `📈 LIVE TRADE PLACED: @${newTrade.username} bought ${newTrade.symbol} (${newTrade.direction === 'UP' ? '↑ UP' : '↓ DOWN'}) - Amount: $${newTrade.marginUsd}`
+                );
+                setTimeout(() => setAdminNotificationToast(null), 6000);
+              }
+            });
+          }
+          isInitialTrades = false;
+          setTrades(updatedTrades);
+        }, (err) => console.warn('Firestore trades subscription warning:', err));
+
+        unsubRequests = onSnapshot(collection(firestoreDb, 'walletRequests'), (snapshot) => {
+          const updatedReqs: WalletRequest[] = [];
+          snapshot.forEach(docSnap => {
+            updatedReqs.push(docSnap.data() as WalletRequest);
+          });
+
+          updatedReqs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+          if (!isInitialRequests) {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                const newReq = change.doc.data() as WalletRequest;
+                playRegistrationChime();
+                if (newReq.type === 'WITHDRAWAL') {
+                  setAdminNotificationToast(
+                    `💸 NEW WITHDRAWAL REQUEST: $${newReq.amountUsd} (${newReq.amountNative} ${newReq.currency}) applied by @${newReq.username}`
+                  );
+                } else {
+                  setAdminNotificationToast(
+                    `💰 NEW DEPOSIT PROOF SUBMITTED: $${newReq.amountUsd} by @${newReq.username}`
+                  );
+                }
+                setTimeout(() => setAdminNotificationToast(null), 6000);
+              }
+            });
+          }
+          isInitialRequests = false;
+          setRequests(updatedReqs);
+        }, (err) => console.warn('Firestore walletRequests subscription warning:', err));
+      } catch (e) {
+        console.warn('Firestore subscription error:', e);
       }
+    }
+
+    // 2. Custom Window Event Handlers (Same-Window / Local Tab)
+    const handleNewUserRegistration = (e: any) => {
+      fetchAllAdminData();
+      playRegistrationChime();
+      setAdminNotificationToast(`👤 New Trader Registered: @${e.detail?.username || 'Client'}`);
+      setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
     const handleNewTrade = (e: any) => {
-      if (currentAdmin) {
-        fetchAllAdminData();
-        playRegistrationChime();
-        setAdminNotificationToast(`📈 New Trade Placed by @${e.detail?.username || 'Trader'}: ${e.detail?.symbol} (${e.detail?.direction})`);
-        setTimeout(() => setAdminNotificationToast(null), 5000);
-      }
+      fetchAllAdminData();
+      playRegistrationChime();
+      setAdminNotificationToast(`📈 LIVE TRADE PLACED: @${e.detail?.username || 'Trader'} placed $${e.detail?.marginUsd || ''} on ${e.detail?.symbol} (${e.detail?.direction})`);
+      setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
     const handleNewWalletReq = (e: any) => {
-      if (currentAdmin) {
-        fetchAllAdminData();
-        playRegistrationChime();
-        setAdminNotificationToast(`💸 New ${e.detail?.type || 'Withdrawal'} Request: $${e.detail?.amountUsd || '0'} by @${e.detail?.username || 'Trader'}`);
-        setTimeout(() => setAdminNotificationToast(null), 5000);
-      }
+      fetchAllAdminData();
+      playRegistrationChime();
+      setAdminNotificationToast(`💸 NEW WITHDRAWAL APPLIED: $${e.detail?.amountUsd || '0'} (${e.detail?.amountNative} ${e.detail?.currency || ''}) by @${e.detail?.username || 'Trader'}`);
+      setTimeout(() => setAdminNotificationToast(null), 5000);
     };
 
     const handleStorageChange = (e: StorageEvent) => {
@@ -363,16 +439,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         e.key === 'flowcoin_last_request_time' ||
         e.key === 'flowcoin_persistent_db_v2'
       ) {
-        if (currentAdmin) {
-          fetchAllAdminData();
-          playRegistrationChime();
-          if (e.key === 'flowcoin_last_trade_time') {
-            setAdminNotificationToast('📈 New Trade Order Received in Portal!');
-          } else if (e.key === 'flowcoin_last_request_time') {
-            setAdminNotificationToast('💸 New Withdrawal/Deposit Request Pending!');
-          }
-          setTimeout(() => setAdminNotificationToast(null), 5000);
+        fetchAllAdminData();
+        playRegistrationChime();
+        if (e.key === 'flowcoin_last_trade_time') {
+          setAdminNotificationToast('📈 New Trade Order Placed by Client!');
+        } else if (e.key === 'flowcoin_last_request_time') {
+          setAdminNotificationToast('💸 New Withdrawal/Deposit Request Pending!');
         }
+        setTimeout(() => setAdminNotificationToast(null), 5000);
       }
     };
 
@@ -382,39 +456,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
+      if (unsubTrades) unsubTrades();
+      if (unsubRequests) unsubRequests();
       window.removeEventListener('flowcoin_new_user_registered', handleNewUserRegistration);
       window.removeEventListener('flowcoin_new_trade_placed', handleNewTrade);
       window.removeEventListener('flowcoin_new_wallet_request', handleNewWalletReq);
       window.removeEventListener('storage', handleStorageChange);
     };
   }, [currentAdmin?.id]);
-
-  // Real-time polling for new client registration, trade, and withdrawal detection
-  useEffect(() => {
-    if (currentAdmin) {
-      const interval = setInterval(() => {
-        Promise.all([
-          api.getAdminUsers(currentAdmin.id),
-          api.getTrades(undefined, currentAdmin.id),
-          api.getWalletRequests(undefined, currentAdmin.id)
-        ]).then(([latestUsers, latestTrades, latestRequests]) => {
-          if (latestUsers && latestUsers.length > users.length) {
-            setUsers(latestUsers);
-            playRegistrationChime();
-          }
-          if (latestTrades && latestTrades.length > trades.length) {
-            setTrades(latestTrades);
-            playRegistrationChime();
-          }
-          if (latestRequests && latestRequests.length > requests.length) {
-            setRequests(latestRequests);
-            playRegistrationChime();
-          }
-        }).catch(() => {});
-      }, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [currentAdmin?.id, users.length, trades.length, requests.length]);
 
   const handleAdminLogout = () => {
     setCurrentAdmin(null);
@@ -1790,71 +1839,290 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
         )}
 
         {/* ============================================================ */}
-        {/* TAB CONTENT: ALL USER TRADES */}
+        {/* TAB CONTENT: ALL USER TRADES & LIVE RUNNING CONTROLS */}
         {/* ============================================================ */}
         {adminTab === 'trades' && (
-          <div className="rounded-3xl bg-[#0c1322] border border-slate-800 p-6 shadow-2xl space-y-4">
-            <h3 className="text-base font-black text-white">All User Trades Monitoring Desk</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-[#080d17] text-slate-400 font-extrabold uppercase text-[10px] border-b border-slate-800">
-                  <tr>
-                    <th className="py-2.5 px-3">Trade ID / User</th>
-                    <th className="py-2.5 px-3">Symbol & Direction</th>
-                    <th className="py-2.5 px-3">Duration & Yield</th>
-                    <th className="py-2.5 px-3">Margin USD</th>
-                    <th className="py-2.5 px-3">Entry Strike</th>
-                    <th className="py-2.5 px-3">Outcome</th>
-                    <th className="py-2.5 px-3 text-right">Force Settle</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {trades.map(t => (
-                    <tr key={t.id} className="hover:bg-slate-800/30">
-                      <td className="py-2.5 px-3 font-sans">
-                        <span className="font-bold text-white">@{t.username}</span>
-                        <div className="text-[10px] text-slate-500 font-mono">{t.id}</div>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="font-extrabold text-white">{t.symbol}</span>
-                        <span className={`ml-1 text-[10px] font-black ${t.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {t.direction === 'UP' ? '↑ UP' : '↓ DOWN'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">{t.durationSeconds}s (+{t.profitPercent}%)</td>
-                      <td className="py-2.5 px-3 font-black text-amber-400">${t.marginUsd}</td>
-                      <td className="py-2.5 px-3">${t.entryPrice}</td>
-                      <td className="py-2.5 px-3 font-sans">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                          t.outcome === 'WIN' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-                        }`}>
-                          {t.outcome}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right space-x-1 font-sans">
-                        <button
-                          onClick={async () => {
-                            await api.adminAdjustTrade(t.id, 'WIN');
-                            fetchAllAdminData();
-                          }}
-                          className="px-2 py-0.5 rounded bg-emerald-600/40 text-emerald-300 text-[10px] font-bold"
-                        >
-                          Win
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await api.adminAdjustTrade(t.id, 'LOSS');
-                            fetchAllAdminData();
-                          }}
-                          className="px-2 py-0.5 rounded bg-rose-600/40 text-rose-300 text-[10px] font-bold"
-                        >
-                          Loss
-                        </button>
-                      </td>
+          <div className="space-y-5">
+            {/* ACTIVE RUNNING TRADES HIGHLIGHT PANEL */}
+            {(() => {
+              const activeTrades = trades.filter(t => t.status === 'RUNNING');
+              return (
+                <div className="rounded-3xl bg-[#0c1322] border-2 border-cyan-500/50 p-6 shadow-2xl space-y-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 flex items-center justify-center font-black animate-pulse">
+                        ⚡
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-white flex items-center space-x-2">
+                          <span>Active Running Trades Controls ({activeTrades.length})</span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold border border-emerald-500/40">
+                            LIVE RUNNING
+                          </span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          Adjust trade amounts, profit %, direction, or force win/loss live while client trades are actively running!
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono text-cyan-300 font-bold bg-cyan-950/80 border border-cyan-500/40 px-3 py-1 rounded-xl">
+                      Real-time Sync Active
+                    </span>
+                  </div>
+
+                  {activeTrades.length === 0 ? (
+                    <div className="p-8 text-center bg-[#080d17] rounded-2xl border border-slate-800 text-slate-400 text-xs font-mono">
+                      No active running trades at this moment. When a client places a trade, it will appear here in real-time with sound notification!
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {activeTrades.map(t => {
+                        const user = users.find(u => u.id === t.userId);
+                        const userMeta = CURRENCIES[user?.nativeCurrency || 'USD'] || CURRENCIES.USD;
+                        return (
+                          <div
+                            key={t.id}
+                            className="p-4 rounded-2xl bg-[#080e1a] border border-cyan-500/40 shadow-xl space-y-3 relative"
+                          >
+                            {/* Trade Header */}
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                              <div>
+                                <span className="font-extrabold text-white text-sm">@{t.username}</span>
+                                <div className="text-[10px] text-slate-400 font-mono">ID: {t.id}</div>
+                              </div>
+                              <div className="text-right">
+                                <span className="px-2.5 py-1 rounded-lg bg-cyan-950 text-cyan-300 text-xs font-black border border-cyan-500/40 font-mono">
+                                  {t.symbol}
+                                </span>
+                                <span className={`ml-1.5 px-2 py-1 rounded-lg text-xs font-black ${
+                                  t.direction === 'UP'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                }`}>
+                                  {t.direction === 'UP' ? '↑ BUY / UP' : '↓ SELL / DOWN'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Trade Stats */}
+                            <div className="grid grid-cols-3 gap-2 text-xs font-mono bg-[#0c1424] p-2.5 rounded-xl border border-slate-800">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Trade Amount</span>
+                                <span className="font-black text-amber-400 text-sm">
+                                  ${t.marginUsd} <span className="text-[10px] text-slate-400">({userMeta.symbol}{t.marginNative || (t.marginUsd * userMeta.rate).toFixed(0)})</span>
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Strike / Entry</span>
+                                <span className="font-bold text-white">${t.entryPrice}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 block">Duration & Yield</span>
+                                <span className="font-bold text-cyan-300">{t.durationSeconds}s (+{t.profitPercent}%)</span>
+                              </div>
+                            </div>
+
+                            {/* Active Amount Controls: Quick Adjust Buttons */}
+                            <div className="space-y-2 pt-1">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-extrabold text-amber-300">
+                                  ⚡ Increase / Decrease Trade Amount Live:
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newMargin = Math.max(1, t.marginUsd + 10);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    if (res.error) alert(res.error);
+                                    else fetchAllAdminData();
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
+                                >
+                                  +$10
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newMargin = Math.max(1, t.marginUsd + 50);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    if (res.error) alert(res.error);
+                                    else fetchAllAdminData();
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
+                                >
+                                  +$50
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newMargin = Math.max(1, t.marginUsd + 100);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    if (res.error) alert(res.error);
+                                    else fetchAllAdminData();
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-all active:scale-95"
+                                >
+                                  +$100
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newMargin = Math.max(1, t.marginUsd - 10);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    if (res.error) alert(res.error);
+                                    else fetchAllAdminData();
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-bold border border-rose-500/40 transition-all active:scale-95"
+                                >
+                                  -$10
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newMargin = Math.max(1, t.marginUsd - 50);
+                                    const res = await api.adminUpdateActiveTrade(t.id, { marginUsd: newMargin });
+                                    if (res.error) alert(res.error);
+                                    else fetchAllAdminData();
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-bold border border-rose-500/40 transition-all active:scale-95"
+                                >
+                                  -$50
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTrade(t);
+                                    setEditTradeMarginInput(t.marginUsd.toString());
+                                    setEditTradeProfitInput(t.profitPercent);
+                                    setEditTradeDirectionInput(t.direction);
+                                  }}
+                                  className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-extrabold border border-amber-500/40 transition-all active:scale-95 ml-auto"
+                                >
+                                  ✏️ Custom Edit
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Force Win / Loss Settle */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                              <span className="text-[11px] text-slate-400">Force Settle Outcome:</span>
+                              <div className="space-x-1.5 font-sans">
+                                <button
+                                  onClick={async () => {
+                                    await api.adminAdjustTrade(t.id, 'WIN');
+                                    fetchAllAdminData();
+                                  }}
+                                  className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow transition-all active:scale-95"
+                                >
+                                  🏆 Force WIN
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    await api.adminAdjustTrade(t.id, 'LOSS');
+                                    fetchAllAdminData();
+                                  }}
+                                  className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow transition-all active:scale-95"
+                                >
+                                  ❌ Force LOSS
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ALL TRADES HISTORY TABLE */}
+            <div className="rounded-3xl bg-[#0c1322] border border-slate-800 p-6 shadow-2xl space-y-4">
+              <h3 className="text-base font-black text-white">All User Trades Monitoring Desk</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-[#080d17] text-slate-400 font-extrabold uppercase text-[10px] border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Trade ID / User</th>
+                      <th className="py-2.5 px-3">Symbol & Direction</th>
+                      <th className="py-2.5 px-3">Duration & Yield</th>
+                      <th className="py-2.5 px-3">Margin USD</th>
+                      <th className="py-2.5 px-3">Entry Strike</th>
+                      <th className="py-2.5 px-3">Status / Outcome</th>
+                      <th className="py-2.5 px-3 text-right">Admin Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {trades.map(t => (
+                      <tr key={t.id} className="hover:bg-slate-800/30">
+                        <td className="py-2.5 px-3 font-sans">
+                          <span className="font-bold text-white">@{t.username}</span>
+                          <div className="text-[10px] text-slate-500 font-mono">{t.id}</div>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-extrabold text-white">{t.symbol}</span>
+                          <span className={`ml-1 text-[10px] font-black ${t.direction === 'UP' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {t.direction === 'UP' ? '↑ UP' : '↓ DOWN'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">{t.durationSeconds}s (+{t.profitPercent}%)</td>
+                        <td className="py-2.5 px-3 font-black text-amber-400">${t.marginUsd}</td>
+                        <td className="py-2.5 px-3">${t.entryPrice}</td>
+                        <td className="py-2.5 px-3 font-sans">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            t.status === 'RUNNING'
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse'
+                              : t.outcome === 'WIN'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          }`}>
+                            {t.status === 'RUNNING' ? 'RUNNING' : t.outcome}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right space-x-1 font-sans">
+                          {t.status === 'RUNNING' && (
+                            <button
+                              onClick={() => {
+                                setEditingTrade(t);
+                                setEditTradeMarginInput(t.marginUsd.toString());
+                                setEditTradeProfitInput(t.profitPercent);
+                                setEditTradeDirectionInput(t.direction);
+                              }}
+                              className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/40 hover:bg-amber-500/30"
+                            >
+                              Edit Trade
+                            </button>
+                          )}
+                          <button
+                            onClick={async () => {
+                              await api.adminAdjustTrade(t.id, 'WIN');
+                              fetchAllAdminData();
+                            }}
+                            className="px-2 py-0.5 rounded bg-emerald-600/40 text-emerald-300 text-[10px] font-bold"
+                          >
+                            Win
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await api.adminAdjustTrade(t.id, 'LOSS');
+                              fetchAllAdminData();
+                            }}
+                            className="px-2 py-0.5 rounded bg-rose-600/40 text-rose-300 text-[10px] font-bold"
+                          >
+                            Loss
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -2559,6 +2827,144 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToClient }) => {
                     Save Changes
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ============================================================ */}
+      {/* MODAL: EDIT ACTIVE RUNNING TRADE (MARGIN, YIELD, DIRECTION) */}
+      {/* ============================================================ */}
+      {editingTrade && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="w-full max-w-md rounded-3xl bg-[#0c1322] border-2 border-cyan-500/60 p-6 shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center space-x-2">
+                  <span>⚡ Custom Edit Active Trade</span>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">
+                    RUNNING
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Trader: <strong className="text-white">@{editingTrade.username}</strong> &bull; Asset: <strong className="text-cyan-300">{editingTrade.symbol}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingTrade(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Trade Margin Amount */}
+              <div>
+                <label className="text-xs font-bold text-amber-300 flex justify-between">
+                  <span>Trade Margin Amount ($ USD):</span>
+                  <span className="text-slate-400 font-mono">Current: ${editingTrade.marginUsd}</span>
+                </label>
+                <div className="relative mt-1">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                  <input
+                    type="number"
+                    value={editTradeMarginInput}
+                    onChange={(e) => setEditTradeMarginInput(e.target.value)}
+                    placeholder="Enter new margin amount"
+                    className="w-full bg-[#080d17] text-sm font-black text-amber-400 rounded-xl pl-8 pr-3.5 py-2.5 border border-slate-700 focus:outline-none focus:border-cyan-400 font-mono"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Increasing or decreasing this amount will automatically adjust the trader's balance and escrow escrow in real-time!
+                </p>
+              </div>
+
+              {/* Profit Yield % */}
+              <div>
+                <label className="text-xs font-bold text-slate-300">Profit Yield Rate (%)</label>
+                <div className="grid grid-cols-5 gap-1.5 mt-1">
+                  {[20, 40, 60, 80, 100].map(pct => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setEditTradeProfitInput(pct)}
+                      className={`py-2 rounded-xl text-xs font-black transition-all ${
+                        editTradeProfitInput === pct
+                          ? 'bg-cyan-500 text-slate-950 font-black shadow'
+                          : 'bg-[#080d17] text-slate-300 border border-slate-700'
+                      }`}
+                    >
+                      +{pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Direction */}
+              <div>
+                <label className="text-xs font-bold text-slate-300">Trade Direction</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEditTradeDirectionInput('UP')}
+                    className={`py-2.5 rounded-xl text-xs font-extrabold transition-all ${
+                      editTradeDirectionInput === 'UP'
+                        ? 'bg-emerald-600 text-white font-black shadow'
+                        : 'bg-[#080d17] text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    ↑ BUY / UP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditTradeDirectionInput('DOWN')}
+                    className={`py-2.5 rounded-xl text-xs font-extrabold transition-all ${
+                      editTradeDirectionInput === 'DOWN'
+                        ? 'bg-rose-600 text-white font-black shadow'
+                        : 'bg-[#080d17] text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    ↓ SELL / DOWN
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingTrade(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingTrade) return;
+                    const num = parseFloat(editTradeMarginInput);
+                    if (isNaN(num) || num <= 0) {
+                      alert('Please enter a valid margin amount');
+                      return;
+                    }
+                    const res = await api.adminUpdateActiveTrade(editingTrade.id, {
+                      marginUsd: num,
+                      profitPercent: editTradeProfitInput,
+                      direction: editTradeDirectionInput
+                    });
+                    if (res.error) {
+                      alert(res.error);
+                    } else {
+                      alert(`Active trade @${editingTrade.username} updated successfully! New Margin: $${num}`);
+                      setEditingTrade(null);
+                      fetchAllAdminData();
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 font-black text-xs text-slate-950 shadow-md shadow-cyan-500/30"
+                >
+                  Save Changes Live
+                </button>
               </div>
             </div>
           </div>

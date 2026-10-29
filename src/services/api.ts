@@ -1103,6 +1103,53 @@ export const api = {
     return this.settleTrade(tradeId, forceOutcome, 81500);
   },
 
+  async adminUpdateActiveTrade(tradeId: string, updates: { marginUsd?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): Promise<any> {
+    const res = localDb.updateActiveTrade(tradeId, updates);
+    if (!res.success) return res;
+
+    if (firestoreDb && res.trade) {
+      try {
+        await setDoc(doc(firestoreDb, 'trades', tradeId), res.trade, { merge: true });
+        await setDoc(doc(firestoreDb, 'users', res.trade.userId), {
+          balance: res.balance,
+          freezeBalance: res.freezeBalance
+        }, { merge: true });
+      } catch (e) {
+        console.warn("Firestore updateActiveTrade sync error:", e);
+      }
+    }
+
+    if (isSupabaseConfigured && supabase && res.trade) {
+      try {
+        await supabase.from('trades').update({
+          margin_usd: res.trade.marginUsd,
+          profit_percent: res.trade.profitPercent,
+          direction: res.trade.direction
+        }).eq('id', tradeId);
+      } catch {}
+    }
+
+    try {
+      fetch(`/api/admin/trades/${tradeId}/update-active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      }).catch(console.warn);
+    } catch {}
+
+    if (typeof window !== 'undefined' && res.trade) {
+      try {
+        window.dispatchEvent(new CustomEvent('flowcoin_trade_updated', { detail: res.trade }));
+        window.dispatchEvent(new CustomEvent('flowcoin_user_balance_updated', {
+          detail: { id: res.trade.userId, balance: res.balance, freezeBalance: res.freezeBalance }
+        }));
+        localStorage.setItem('flowcoin_last_trade_time', Date.now().toString());
+      } catch {}
+    }
+
+    return res;
+  },
+
   // Finance / Wallets
   async getWalletRequests(userId?: string, _adminId?: string): Promise<WalletRequest[]> {
     const reqs = localDb.getWalletRequests();
@@ -1130,6 +1177,14 @@ export const api = {
       network: payload.network,
       addressOrAccount: address
     });
+
+    if (res.success && res.request && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'walletRequests', res.request.id), res.request);
+      } catch (err) {
+        console.warn('Firestore deposit sync warning:', err);
+      }
+    }
 
     if (res.success && res.request && isSupabaseConfigured && supabase) {
       try {
@@ -1194,6 +1249,14 @@ export const api = {
       network: payload.network,
       addressOrAccount: payload.addressOrAccount
     });
+
+    if (res.success && res.request && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'walletRequests', res.request.id), res.request);
+      } catch (err) {
+        console.warn('Firestore withdrawal sync warning:', err);
+      }
+    }
 
     if (res.success && res.user) {
       // 1. Sync updated balance to Firestore

@@ -968,6 +968,43 @@ async function startServer() {
     res.json({ success: true, trade, balance: user.balance, freezeBalance: user.freezeBalance });
   });
 
+  // Admin Update Active Running Trade (Margin Amount, Profit %, Direction)
+  app.post('/api/admin/trades/:id/update-active', (req: Request, res: Response) => {
+    const { marginUsd, profitPercent, direction, durationSeconds } = req.body;
+    const trade = db.trades.find(t => t.id === req.params.id);
+    if (!trade) return res.status(404).json({ error: 'Trade not found' });
+    const user = db.users.find(u => u.id === trade.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (marginUsd !== undefined && marginUsd > 0) {
+      const diff = marginUsd - trade.marginUsd;
+      if (diff > 0) {
+        if (user.balance < diff) {
+          return res.status(400).json({ error: 'User available balance too low to increase trade margin' });
+        }
+        user.balance = +(user.balance - diff).toFixed(2);
+        user.freezeBalance = +(user.freezeBalance + diff).toFixed(2);
+      } else if (diff < 0) {
+        const release = Math.abs(diff);
+        user.freezeBalance = Math.max(0, +(user.freezeBalance - release).toFixed(2));
+        user.balance = +(user.balance + release).toFixed(2);
+      }
+      trade.marginUsd = marginUsd;
+      const rate = CURRENCIES[user.nativeCurrency]?.rate || 1.0;
+      trade.marginNative = +(marginUsd * rate).toFixed(2);
+    }
+
+    if (profitPercent !== undefined) trade.profitPercent = profitPercent;
+    if (direction) trade.direction = direction;
+    if (durationSeconds) {
+      trade.durationSeconds = durationSeconds;
+      if (trade.startTime) trade.endTime = trade.startTime + durationSeconds * 1000;
+    }
+
+    saveDatabase();
+    res.json({ success: true, trade, balance: user.balance, freezeBalance: user.freezeBalance });
+  });
+
   // 9. Wallet & Finance Management (Deposits & Withdrawals)
   app.get('/api/finance/requests', (req: Request, res: Response) => {
     const { userId, adminId } = req.query;

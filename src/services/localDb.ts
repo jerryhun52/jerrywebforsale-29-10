@@ -7,7 +7,8 @@ import {
   AppConfig,
   CoinTicker,
   TradeMode,
-  UserStatus
+  UserStatus,
+  CURRENCIES
 } from '../types.ts';
 import { cleanMobileInput, isPasswordEquivalent, detectDeviceType } from '../utils/sanitizer.ts';
 
@@ -679,6 +680,50 @@ export const localDb = {
     db.trades.unshift(newTrade);
     saveDb(db);
     return { success: true, trade: newTrade, balance: user.balance, freezeBalance: user.freezeBalance };
+  },
+
+  updateActiveTrade(tradeId: string, updates: { marginUsd?: number; profitPercent?: number; direction?: 'UP' | 'DOWN'; durationSeconds?: number }): any {
+    const db = getDb();
+    const trade = db.trades.find(t => t.id === tradeId);
+    if (!trade) return { error: 'Trade not found' };
+    const user = db.users.find(u => u.id === trade.userId);
+    if (!user) return { error: 'User not found' };
+
+    if (updates.marginUsd !== undefined && updates.marginUsd > 0) {
+      const diff = updates.marginUsd - trade.marginUsd;
+      if (diff > 0) {
+        if (user.balance < diff) {
+          return { error: `User balance insufficient! Available: $${user.balance}, needed: $${diff.toFixed(2)}` };
+        }
+        user.balance = +(user.balance - diff).toFixed(2);
+        user.freezeBalance = +(user.freezeBalance + diff).toFixed(2);
+      } else if (diff < 0) {
+        const release = Math.abs(diff);
+        user.freezeBalance = Math.max(0, +(user.freezeBalance - release).toFixed(2));
+        user.balance = +(user.balance + release).toFixed(2);
+      }
+      trade.marginUsd = updates.marginUsd;
+      const rate = CURRENCIES[user.nativeCurrency]?.rate || 1.0;
+      trade.marginNative = +(updates.marginUsd * rate).toFixed(2);
+    }
+
+    if (updates.profitPercent !== undefined) {
+      trade.profitPercent = updates.profitPercent;
+    }
+
+    if (updates.direction) {
+      trade.direction = updates.direction;
+    }
+
+    if (updates.durationSeconds) {
+      trade.durationSeconds = updates.durationSeconds;
+      if (trade.startTime) {
+        trade.endTime = trade.startTime + updates.durationSeconds * 1000;
+      }
+    }
+
+    saveDb(db);
+    return { success: true, trade, user, balance: user.balance, freezeBalance: user.freezeBalance };
   },
 
   settleTrade(tradeId: string, outcome: 'WIN' | 'LOSS', finalPrice: number): any {
