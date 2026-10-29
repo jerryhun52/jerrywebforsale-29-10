@@ -55,12 +55,12 @@ export const Header: React.FC<HeaderProps> = ({
               <circle cx="12" cy="12" r="4" className="stroke-white" />
             </svg>
           </div>
-          <div className="flex items-center space-x-1.5 whitespace-nowrap">
+          <div className="flex flex-col justify-center leading-none">
             <span className="text-sm sm:text-base font-black tracking-wider text-slate-900 leading-none">
               COIN BASED
             </span>
-            <span className="hidden sm:inline-block text-[10px] font-bold tracking-widest text-cyan-900 uppercase">
-              • Trade &amp; Invest
+            <span className="text-[9px] sm:text-[10px] font-bold tracking-wider text-slate-800 uppercase leading-none mt-0.5">
+              Trade &amp; Invest
             </span>
           </div>
         </div>
