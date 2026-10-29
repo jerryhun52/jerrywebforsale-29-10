@@ -430,8 +430,9 @@ export const api = {
     const localUser = localRes.success ? localRes.user : null;
 
     let cloudUser: User | null = null;
+    let backendUser: User | null = null;
 
-    // Check Firestore
+    // 1. Check Firestore for real-time document
     if (firestoreDb) {
       try {
         const snap = await getDoc(doc(firestoreDb, 'users', id));
@@ -439,55 +440,52 @@ export const api = {
           cloudUser = snap.data() as User;
         }
       } catch {
-        // Fallback
+        // Handled
       }
     }
 
-    // Check Supabase if Firestore didn't find
-    if (!cloudUser && isSupabaseConfigured && supabase) {
-      try {
-        const { data: userRows } = await supabase.from('users').select('*').eq('id', id).limit(1);
-        if (userRows && userRows.length > 0) {
-          const row = userRows[0];
-          const { data: balanceRows } = await supabase.from('balances').select('*').eq('user_id', id).limit(1);
-          const bal = balanceRows && balanceRows.length > 0 ? balanceRows[0] : null;
-          cloudUser = {
-            id: row.id,
-            username: row.username,
-            displayName: row.display_name || row.username,
-            email: row.email,
-            nativeCurrency: row.native_currency || 'USD',
-            balance: bal ? Number(bal.available_usd) : 0,
-            freezeBalance: bal ? Number(bal.frozen_usd) : 0,
-            creditScore: row.credit_score || 100,
-            status: row.status || 'Active',
-            tradeMode: row.trade_mode || 'AUTO',
-            referralCodeUsed: row.referral_code_used,
-            referredByAdminId: row.referred_by_admin_id,
-            registeredTime: row.registered_time || new Date().toLocaleString(),
-            createdAt: row.created_at
-          };
+    // 2. Check Express Backend (/api/auth/profile/:id)
+    try {
+      const resp = await fetch(`/api/auth/profile/${encodeURIComponent(id)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.user) {
+          backendUser = data.user;
         }
-      } catch {
-        // Fallback
       }
+    } catch {}
+
+    const authoritativeSource = cloudUser || backendUser;
+
+    if (authoritativeSource) {
+      const finalBalance = authoritativeSource.balance !== undefined
+        ? Number(authoritativeSource.balance)
+        : (localUser ? localUser.balance : 0);
+
+      const finalFreeze = authoritativeSource.freezeBalance !== undefined
+        ? Number(authoritativeSource.freezeBalance)
+        : (localUser ? localUser.freezeBalance : 0);
+
+      const resolvedUser: User = {
+        ...(localUser || authoritativeSource),
+        ...authoritativeSource,
+        balance: finalBalance,
+        freezeBalance: finalFreeze,
+        status: authoritativeSource.status || localUser?.status || 'Active',
+        tradeMode: authoritativeSource.tradeMode || localUser?.tradeMode || 'AUTO',
+        creditScore: authoritativeSource.creditScore !== undefined ? Number(authoritativeSource.creditScore) : (localUser?.creditScore ?? 100),
+        freezeReason: authoritativeSource.freezeReason !== undefined ? authoritativeSource.freezeReason : localUser?.freezeReason
+      };
+
+      localDb.syncUserFromCloud(resolvedUser);
+      try {
+        localStorage.setItem('flowcoin_current_user', JSON.stringify(resolvedUser));
+      } catch {}
+      return { success: true, user: resolvedUser };
     }
 
     if (localUser) {
-      // Local storage is authoritative for instant trade updates.
-      // If cloudUser has newer status or fields, merge non-destructive properties
-      if (cloudUser) {
-        if (cloudUser.status) localUser.status = cloudUser.status;
-        if (cloudUser.tradeMode) localUser.tradeMode = cloudUser.tradeMode;
-        if (cloudUser.freezeReason !== undefined) localUser.freezeReason = cloudUser.freezeReason;
-        if (cloudUser.creditScore) localUser.creditScore = cloudUser.creditScore;
-      }
       return { success: true, user: localUser };
-    }
-
-    if (cloudUser) {
-      localDb.addUser(cloudUser);
-      return { success: true, user: cloudUser };
     }
 
     return { success: false, error: 'User account not found.' };
@@ -600,59 +598,36 @@ export const api = {
         const serverUsers = await resp.json();
         if (Array.isArray(serverUsers)) {
           serverUsers.forEach((u: User) => {
-            if (!userMap.has(u.id)) {
-              localDb.addUser(u);
-              userMap.set(u.id, u);
-            }
+            const existing = userMap.get(u.id);
+            const merged: User = existing ? {
+              ...existing,
+              ...u,
+              balance: u.balance !== undefined ? Number(u.balance) : existing.balance,
+              freezeBalance: u.freezeBalance !== undefined ? Number(u.freezeBalance) : existing.freezeBalance
+            } : u;
+            userMap.set(u.id, merged);
+            localDb.syncUserFromCloud(merged);
           });
         }
       }
     } catch {}
 
-    // 3. Load from Supabase if connected
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data: rows } = await supabase.from('users').select('*').eq('role', 'USER');
-        if (rows && rows.length > 0) {
-          for (const row of rows) {
-            const userObj: User = {
-              id: row.id,
-              username: row.username,
-              displayName: row.display_name || row.username,
-              email: row.email,
-              nativeCurrency: row.native_currency || 'USD',
-              balance: 0.0,
-              freezeBalance: 0.0,
-              creditScore: row.credit_score || 100,
-              status: row.status || 'Active',
-              tradeMode: row.trade_mode || 'AUTO',
-              referredByAdminId: row.referred_by_admin_id,
-              referralCodeUsed: row.referral_code_used,
-              registeredTime: row.registered_time || new Date().toLocaleString(),
-              createdAt: row.created_at
-            };
-            if (!userMap.has(userObj.id)) {
-              localDb.addUser(userObj);
-              userMap.set(userObj.id, userObj);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Supabase fetch users warning:', err);
-      }
-    }
-
-    // 4. Load from Firestore if connected
+    // 3. Load from Firestore if connected
     if (firestoreDb) {
       try {
         const snap = await getDocs(collection(firestoreDb, 'users'));
         snap.forEach(docSnap => {
           const u = docSnap.data() as User;
           if (u && u.id) {
-            if (!userMap.has(u.id)) {
-              localDb.addUser(u);
-              userMap.set(u.id, u);
-            }
+            const existing = userMap.get(u.id);
+            const merged: User = existing ? {
+              ...existing,
+              ...u,
+              balance: u.balance !== undefined ? Number(u.balance) : existing.balance,
+              freezeBalance: u.freezeBalance !== undefined ? Number(u.freezeBalance) : existing.freezeBalance
+            } : u;
+            userMap.set(u.id, merged);
+            localDb.syncUserFromCloud(merged);
           }
         });
       } catch (err) {
@@ -705,12 +680,17 @@ export const api = {
         }
       }
 
-      // Sync to Express Backend Server
+      // Sync to Express Backend Server with explicit balances
       try {
         fetch(`/api/admin/users/${userId}/balance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, amountUsd })
+          body: JSON.stringify({
+            action,
+            amountUsd,
+            balance: res.user.balance,
+            freezeBalance: res.user.freezeBalance
+          })
         }).catch(console.warn);
       } catch {}
 
@@ -1032,6 +1012,18 @@ export const api = {
           console.warn('Trade event dispatch warning:', e);
         }
       }
+
+      // Sync balance to Express server backend
+      try {
+        fetch(`/api/admin/users/${res.trade.userId}/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            balance: res.balance,
+            freezeBalance: res.freezeBalance
+          })
+        }).catch(console.warn);
+      } catch {}
     }
 
     return res;
@@ -1078,6 +1070,20 @@ export const api = {
       } catch {
         // Handled
       }
+    }
+
+    // Sync balance to Express server backend
+    if (res.success && res.trade) {
+      try {
+        fetch(`/api/admin/users/${res.trade.userId}/balance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            balance: res.balance,
+            freezeBalance: res.freezeBalance
+          })
+        }).catch(console.warn);
+      } catch {}
     }
 
     if (res.success && res.trade && typeof window !== 'undefined') {

@@ -183,7 +183,7 @@
       "password": "password123",
       "email": "client_vip_trader@flowcoin.io",
       "nativeCurrency": "USD",
-      "balance": 1000,
+      "balance": 1500,
       "freezeBalance": 0,
       "creditScore": 95,
       "status": "Active",

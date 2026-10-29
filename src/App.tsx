@@ -27,6 +27,7 @@ import {
   AppConfig
 } from './types.ts';
 import { api } from './services/api.ts';
+import { localDb } from './services/localDb.ts';
 import { db as firestoreDb } from './services/firebase.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { X, Bell, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -221,12 +222,22 @@ export default function App() {
           unsubFirestore = onSnapshot(doc(firestoreDb, 'users', user.id), (docSnap) => {
             if (docSnap.exists()) {
               const cloudData = docSnap.data();
+              const newBal = cloudData.balance !== undefined ? Number(cloudData.balance) : undefined;
+              const newFrz = cloudData.freezeBalance !== undefined ? Number(cloudData.freezeBalance) : undefined;
+
+              localDb.syncUserFromCloud({
+                id: user.id,
+                ...cloudData,
+                balance: newBal,
+                freezeBalance: newFrz
+              });
+
               setUser(prev => {
                 if (!prev) return null;
                 const updated: User = {
                   ...prev,
-                  balance: cloudData.balance !== undefined ? Number(cloudData.balance) : prev.balance,
-                  freezeBalance: cloudData.freezeBalance !== undefined ? Number(cloudData.freezeBalance) : prev.freezeBalance,
+                  balance: newBal !== undefined ? newBal : prev.balance,
+                  freezeBalance: newFrz !== undefined ? newFrz : prev.freezeBalance,
                   status: cloudData.status || prev.status,
                   freezeReason: cloudData.freezeReason !== undefined ? cloudData.freezeReason : prev.freezeReason,
                   creditScore: cloudData.creditScore !== undefined ? Number(cloudData.creditScore) : prev.creditScore,
@@ -249,6 +260,7 @@ export default function App() {
       // 2. Same-Window Event Broadcast Listener
       const handleBalanceEvent = (e: any) => {
         if (e.detail && e.detail.id === user.id) {
+          localDb.syncUserFromCloud(e.detail);
           setUser(prev => {
             if (!prev) return null;
             const updated = {
@@ -307,6 +319,7 @@ export default function App() {
       const newBal = Math.max(0, +(prev.balance - margin).toFixed(2));
       const newFreeze = +((prev.freezeBalance || 0) + margin).toFixed(2);
       const updated = { ...prev, balance: newBal, freezeBalance: newFreeze };
+      localDb.syncUserFromCloud(updated);
       try {
         localStorage.setItem('flowcoin_current_user', JSON.stringify(updated));
       } catch {}

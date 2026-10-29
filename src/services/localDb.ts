@@ -488,11 +488,40 @@ export const localDb = {
     const db = getDb();
     const existing = db.users.findIndex(u => u.id === user.id);
     if (existing >= 0) {
-      db.users[existing] = user;
+      db.users[existing] = {
+        ...db.users[existing],
+        ...user,
+        balance: user.balance !== undefined ? Number(user.balance) : db.users[existing].balance,
+        freezeBalance: user.freezeBalance !== undefined ? Number(user.freezeBalance) : db.users[existing].freezeBalance
+      };
     } else {
       db.users.unshift(user);
     }
     saveDb(db);
+  },
+
+  syncUserFromCloud(updatedUser: Partial<User> & { id: string }): User | null {
+    const db = getDb();
+    const idx = db.users.findIndex(u => u.id === updatedUser.id);
+    if (idx >= 0) {
+      db.users[idx] = {
+        ...db.users[idx],
+        ...updatedUser,
+        balance: updatedUser.balance !== undefined ? Number(updatedUser.balance) : db.users[idx].balance,
+        freezeBalance: updatedUser.freezeBalance !== undefined ? Number(updatedUser.freezeBalance) : db.users[idx].freezeBalance,
+        status: updatedUser.status || db.users[idx].status,
+        tradeMode: updatedUser.tradeMode || db.users[idx].tradeMode,
+        creditScore: updatedUser.creditScore !== undefined ? Number(updatedUser.creditScore) : db.users[idx].creditScore,
+        freezeReason: updatedUser.freezeReason !== undefined ? updatedUser.freezeReason : db.users[idx].freezeReason
+      };
+      saveDb(db);
+      return db.users[idx];
+    } else {
+      const newUser = updatedUser as User;
+      db.users.unshift(newUser);
+      saveDb(db);
+      return newUser;
+    }
   },
 
   addAdmin(admin: AdminAccount): void {

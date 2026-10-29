@@ -343,7 +343,10 @@ async function startServer() {
   });
 
   app.get('/api/auth/profile/:id', (req: Request, res: Response) => {
-    const user = db.users.find(u => u.id === req.params.id);
+    const param = decodeURIComponent(req.params.id || '');
+    const user = db.users.find(
+      u => u.id === param || cleanMobileInput(u.username).toLowerCase() === cleanMobileInput(param).toLowerCase()
+    );
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -452,27 +455,43 @@ async function startServer() {
 
   // Balance Control (Add, Deduct, Set)
   app.post('/api/admin/users/:id/balance', (req: Request, res: Response) => {
-    const { action, amountUsd } = req.body; // action: 'add' | 'deduct' | 'set'
-    const user = db.users.find(u => u.id === req.params.id);
+    const { action, amountUsd, balance, freezeBalance } = req.body;
+    const param = decodeURIComponent(req.params.id || '');
+    const user = db.users.find(
+      u => u.id === param || cleanMobileInput(u.username).toLowerCase() === cleanMobileInput(param).toLowerCase()
+    );
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const numAmount = parseFloat(amountUsd);
-    if (isNaN(numAmount) || numAmount < 0) {
-      return res.status(400).json({ error: 'Invalid balance amount' });
+    if (balance !== undefined) {
+      const explicitBal = parseFloat(balance);
+      if (!isNaN(explicitBal) && explicitBal >= 0) {
+        user.balance = explicitBal;
+      }
+    } else if (action && amountUsd !== undefined) {
+      const numAmount = parseFloat(amountUsd);
+      if (!isNaN(numAmount) && numAmount >= 0) {
+        if (action === 'add') {
+          user.balance += numAmount;
+        } else if (action === 'deduct') {
+          user.balance = Math.max(0, user.balance - numAmount);
+        } else if (action === 'set') {
+          user.balance = numAmount;
+        }
+      }
     }
 
-    if (action === 'add') {
-      user.balance += numAmount;
-    } else if (action === 'deduct') {
-      user.balance = Math.max(0, user.balance - numAmount);
-    } else if (action === 'set') {
-      user.balance = numAmount;
+    if (freezeBalance !== undefined) {
+      const explicitFreeze = parseFloat(freezeBalance);
+      if (!isNaN(explicitFreeze) && explicitFreeze >= 0) {
+        user.freezeBalance = explicitFreeze;
+      }
     }
 
     user.balance = +user.balance.toFixed(2);
+    user.freezeBalance = +(user.freezeBalance || 0).toFixed(2);
     saveDatabase();
-    res.json({ success: true, balance: user.balance });
+    res.json({ success: true, balance: user.balance, freezeBalance: user.freezeBalance, user });
   });
 
   // Freeze Escrow Funds Control
